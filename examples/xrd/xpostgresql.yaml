@@ -1,46 +1,46 @@
 apiVersion: apiextensions.crossplane.io/v1
 kind: CompositeResourceDefinition
 metadata:
-    name: xpostgresqlinstances.database.example.org
+  name: xpostgresqlinstances.database.example.org
 spec:
-    group: database.example.org
-    names:
-        kind: XPostgreSQLInstance
-        plural: xpostgresqlinstances
-    claimNames:
-        kind: PostgreSQLInstance
-        plural: postgresqlinstances
-    versions:
-        - name: v1alpha1
-          served: true
-          referenceable: true
-          schema:
-            openAPIV3Schema:
-                type: object
-                properties:
-                    spec:
-                        type: object
-                        properties:
-                            parameters:
-                                type: object
-                                properties:
-                                    backupRetentionDays:
-                                        type: integer
-                                        default: 7
-                                    highAvailability:
-                                        type: boolean
-                                        default: false
-                                    instanceSize:
-                                        type: string
-                                        default: medium
-                                    storageGB:
-                                        type: integer
-                                    version:
-                                        type: string
-                                        default: "15"
-                                required:
-                                    - storageGB
-                        required:
-                            - parameters
-                required:
-                    - spec
+  group: database.example.org
+  names:
+    kind: XPostgreSQLInstance
+    plural: xpostgresqlinstances
+  claimNames:
+    kind: PostgreSQLInstance
+    plural: postgresqlinstances
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    backupRetentionDays:
+                      type: integer
+                      default: 7
+                    highAvailability:
+                      type: boolean
+                      default: false
+                    instanceSize:
+                      type: string
+                      default: medium
+                    storageGB:
+                      type: integer
+                    version:
+                      type: string
+                      default: "15"
+                  required:
+                    - storageGB
+              required:
+                - parameters
+          required:
+            - spec

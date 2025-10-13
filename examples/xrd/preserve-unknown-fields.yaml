@@ -1,62 +1,62 @@
 apiVersion: apiextensions.crossplane.io/v1
 kind: CompositeResourceDefinition
 metadata:
-    name: flexibleconfigs.config.example.io
+  name: flexibleconfigs.config.example.org
 spec:
-    group: config.example.io
-    names:
-        kind: FlexibleConfig
-        plural: flexibleconfigs
-    versions:
-        - name: v1alpha1
-          served: true
-          referenceable: true
-          schema:
-            openAPIV3Schema:
-                type: object
-                properties:
-                    spec:
+  group: config.example.org
+  names:
+    kind: FlexibleConfig
+    plural: flexibleconfigs
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    config:
+                      type: object
+                      description: |-
+                        Configuration object that can accept any arbitrary key-value pairs
+                        This allows users to add custom fields not defined in the schema
+                      x-kubernetes-preserve-unknown-fields: true
+                    labels:
+                      type: object
+                      description: |-
+                        Standard map type (not arbitrary)
+                        This only accepts string keys and string values
+                    metadata:
+                      type: array
+                      description: |-
+                        List of arbitrary objects for flexible data structures
+                        Each item can have any properties
+                      items:
                         type: object
-                        properties:
-                            parameters:
-                                type: object
-                                properties:
-                                    config:
-                                        type: object
-                                        description: |-
-                                            Configuration object that can accept any arbitrary key-value pairs
-                                            This allows users to add custom fields not defined in the schema
-                                        x-kubernetes-preserve-unknown-fields: true
-                                    labels:
-                                        type: object
-                                        description: |-
-                                            Standard map type (not arbitrary)
-                                            This only accepts string keys and string values
-                                    metadata:
-                                        type: array
-                                        description: |-
-                                            List of arbitrary objects for flexible data structures
-                                            Each item can have any properties
-                                        items:
-                                            type: object
-                                            x-kubernetes-preserve-unknown-fields: true
-                                        x-kubernetes-preserve-unknown-fields: true
-                                    name:
-                                        type: string
-                                        description: Resource name
-                                    settings:
-                                        type: object
-                                        description: Optional settings that can be any structure
-                                        x-kubernetes-preserve-unknown-fields: true
-                                    tags:
-                                        type: array
-                                        description: Array of strings (not arbitrary)
-                                        items:
-                                            type: string
-                                required:
-                                    - name
-                                    - config
-                        required:
-                            - parameters
-                required:
-                    - spec
+                        x-kubernetes-preserve-unknown-fields: true
+                      x-kubernetes-preserve-unknown-fields: true
+                    name:
+                      type: string
+                      description: Resource name
+                    settings:
+                      type: object
+                      description: Optional settings that can be any structure
+                      x-kubernetes-preserve-unknown-fields: true
+                    tags:
+                      type: array
+                      description: Array of strings (not arbitrary)
+                      items:
+                        type: string
+                  required:
+                    - name
+                    - config
+              required:
+                - parameters
+          required:
+            - spec

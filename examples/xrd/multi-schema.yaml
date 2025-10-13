@@ -1,103 +1,54 @@
 apiVersion: apiextensions.crossplane.io/v1
 kind: CompositeResourceDefinition
 metadata:
-    name: dynatracealertings.test.crossplane.io
+  name: multischemaalertrules.monitoring.example.org
 spec:
-    group: test.crossplane.io
-    names:
-        kind: DynatraceAlerting
-        plural: dynatracealertings
-    versions:
-        - name: v1alpha1
-          served: true
-          referenceable: true
-          schema:
-            openAPIV3Schema:
-                type: object
-                properties:
-                    spec:
-                        type: object
-                        properties:
-                            parameters:
-                                type: object
-                                properties:
-                                    alertingConfig:
-                                        type: object
-                                        properties:
-                                            schemaId:
-                                                type: string
-                                                default: builtin:alerting.profile
-                                            schemaVersion:
-                                                type: string
-                                                default: "8.5"
-                                            scope:
-                                                type: string
-                                                default: environment
-                                            value:
-                                                type: object
-                                                properties:
-                                                    name:
-                                                        type: object
-                                                        description: Profile name
-                                                    severityRules:
-                                                        type: array
-                                                        items:
-                                                            type: object
-                                                            properties:
-                                                                delayInMinutes:
-                                                                    type: integer
-                                                                    description: Delay before triggering
-                                                                    default: 0
-                                                                severityLevel:
-                                                                    type: object
-                                                                    description: Severity level for the rule
-                                                                    enum:
-                                                                        - AVAILABILITY
-                                                                        - CUSTOM_ALERT
-                                                                        - ERROR
-                                                                        - PERFORMANCE
-                                                                        - RESOURCE_CONTENTION
-                                                                        - RESOURCE_LIMITATION
-                                                                        - SECURITY
-                                                                        - USAGE
-                                                                tagFilter:
-                                                                    type: object
-                                                                    description: Tags to filter on
-                                                                    x-kubernetes-preserve-unknown-fields: true
-                                                                tagFilterIncludeMode:
-                                                                    type: object
-                                                                    description: Tag filter mode
-                                                                    enum:
-                                                                        - ALL_PROBLEMS
-                                                                        - ONLY_OPEN_PROBLEMS
-                                                                        - ONLY_CLOSED_PROBLEMS
-                                                            required:
-                                                                - severityLevel
-                                                                - delayInMinutes
-                                                                - tagFilterIncludeMode
-                                                required:
-                                                    - name
-                                        required:
-                                            - value
-                                    applicationRef:
-                                        type: object
-                                        properties:
-                                            name:
-                                                type: object
-                                                description: Application name
-                                            namespace:
-                                                type: string
-                                                description: Kubernetes namespace
-                                                default: default
-                                        required:
-                                            - name
-                                required:
-                                    - applicationRef
-                                    - alertingConfig
-                        required:
-                            - parameters
-                required:
-                    - spec
-    categories:
-        - monitoring
-        - alerting
+  group: monitoring.example.org
+  names:
+    kind: MultiSchemaAlertRule
+    plural: multischemaalertrules
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    delayInMinutes:
+                      type: integer
+                      default: 0
+                    severityLevel:
+                      type: object
+                      enum:
+                        - AVAILABILITY
+                        - CUSTOM_ALERT
+                        - ERROR
+                        - PERFORMANCE
+                        - RESOURCE_CONTENTION
+                        - RESOURCE_LIMITATION
+                        - SECURITY
+                        - USAGE
+                    tagFilter:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                    tagFilterIncludeMode:
+                      type: object
+                      enum:
+                        - ALL_PROBLEMS
+                        - ONLY_OPEN_PROBLEMS
+                        - ONLY_CLOSED_PROBLEMS
+                  required:
+                    - severityLevel
+                    - delayInMinutes
+                    - tagFilterIncludeMode
+              required:
+                - parameters
+          required:
+            - spec

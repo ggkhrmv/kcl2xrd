@@ -1,31 +1,31 @@
 """
-Test file with multiple schemas and new features
+Test file with multiple schemas demonstrating schema selection and annotations
 """
 
-schema ConfigParams:
+schema MultiSchemaConfigParams:
     # @preserveUnknownFields
     settings?: {str:str}  # Dynamic configuration settings
     timeout?: int = 30  # Timeout in seconds
 
-schema DynatraceAlerting:
-    applicationRef: ApplicationRef
-    alertingConfig: AlertingConfig
+schema MultiSchemaMonitoring:
+    appRef: MultiSchemaAppRef
+    config: MultiSchemaAlertConfig
 
-schema ApplicationRef:
+schema MultiSchemaAppRef:
     name: str  # Application name
     namespace?: str = "default"  # Kubernetes namespace
 
-schema AlertingConfig:
+schema MultiSchemaAlertConfig:
     scope?: str = "environment"
     schemaId?: str = "builtin:alerting.profile"
     schemaVersion?: str = "8.5"
-    value: AlertingConfigValue
+    value: MultiSchemaAlertValue
 
-schema AlertingConfigValue:
+schema MultiSchemaAlertValue:
     name: str  # Profile name
-    severityRules?: [AlertingConfigValueSeverityRule]
+    rules?: [MultiSchemaAlertRule]
 
-schema AlertingConfigValueSeverityRule:
+schema MultiSchemaAlertRule:
     # @enum(["AVAILABILITY", "CUSTOM_ALERT", "ERROR", "PERFORMANCE", "RESOURCE_CONTENTION", "RESOURCE_LIMITATION", "SECURITY", "USAGE"])
     severityLevel: str  # Severity level for the rule
     delayInMinutes: int = 0  # Delay before triggering

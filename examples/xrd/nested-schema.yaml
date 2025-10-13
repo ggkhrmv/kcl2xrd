@@ -1,41 +1,41 @@
 apiVersion: apiextensions.crossplane.io/v1
 kind: CompositeResourceDefinition
 metadata:
-    name: mybuckets.storage.example.org
+  name: mybuckets.storage.example.org
 spec:
-    group: storage.example.org
-    names:
-        kind: MyBucket
-        plural: mybuckets
-    versions:
-        - name: v1alpha1
-          served: true
-          referenceable: true
-          schema:
-            openAPIV3Schema:
-                type: object
-                properties:
-                    spec:
-                        type: object
-                        properties:
-                            parameters:
-                                type: object
-                                properties:
-                                    bucketName:
-                                        type: string
-                                    parameters:
-                                        type: object
-                                        properties:
-                                            labels:
-                                                type: object
-                                            region:
-                                                type: string
-                                                description: 'S3 Bucket composite resource  Attributes ---------- parameters : MyBucketParams, required Configuration parameters for the bucket bucketName : str, required The name of the S3 bucket'
-                                                default: eu-central-1
-                                required:
-                                    - parameters
-                                    - bucketName
-                        required:
-                            - parameters
-                required:
-                    - spec
+  group: storage.example.org
+  names:
+    kind: MyBucket
+    plural: mybuckets
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    bucketName:
+                      type: string
+                    parameters:
+                      type: object
+                      properties:
+                        labels:
+                          type: object
+                        region:
+                          type: string
+                          description: 'S3 Bucket composite resource  Attributes ---------- parameters : MyBucketParams, required Configuration parameters for the bucket bucketName : str, required The name of the S3 bucket'
+                          default: eu-central-1
+                  required:
+                    - parameters
+                    - bucketName
+              required:
+                - parameters
+          required:
+            - spec

@@ -36,8 +36,8 @@ type XRDSpec struct {
 	Group      string      `yaml:"group"`
 	Names      Names       `yaml:"names"`
 	ClaimNames *ClaimNames `yaml:"claimNames,omitempty"`
-	Versions   []Version   `yaml:"versions"`
 	Categories []string    `yaml:"categories,omitempty"`
+	Versions   []Version   `yaml:"versions"`
 }
 
 // Names represents the names section of an XRD spec
@@ -218,13 +218,17 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 	xrd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"] = specSchema
 	xrd.Spec.Versions[0].Schema.OpenAPIV3Schema.Required = []string{"spec"}
 
-	// Marshal to YAML
-	yamlBytes, err := yaml.Marshal(xrd)
+	// Marshal to YAML with 2-space indentation
+	var buf strings.Builder
+	encoder := yaml.NewEncoder(&buf)
+	encoder.SetIndent(2)
+	err := encoder.Encode(xrd)
+	encoder.Close()
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal XRD to YAML: %w", err)
 	}
 
-	return string(yamlBytes), nil
+	return buf.String(), nil
 }
 
 // convertFieldToPropertySchema converts a KCL field to an OpenAPI property schema
