@@ -29,6 +29,7 @@ examples: build
 	./bin/kcl2xrd --input examples/kcl/xpostgresql.k --group database.example.org --with-claims --output examples/xrd/xpostgresql.yaml
 	./bin/kcl2xrd --input examples/kcl/validated.k --group example.org --output examples/xrd/validated.yaml
 	./bin/kcl2xrd --input examples/kcl/advanced-validated.k --group example.org --output examples/xrd/advanced-validated.yaml
+	./bin/kcl2xrd --input examples/kcl/nested-schema.k --group storage.example.org --output examples/xrd/nested-schema.yaml
 
 # Format code
 fmt:

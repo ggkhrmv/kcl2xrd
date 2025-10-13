@@ -16,6 +16,12 @@ type Schema struct {
 	Fields      []Field
 }
 
+// ParseResult contains all schemas parsed from a file
+type ParseResult struct {
+	Schemas map[string]*Schema // map of schema name to schema
+	Primary *Schema            // the last/main schema in the file
+}
+
 // Field represents a field in a KCL schema
 type Field struct {
 	Name        string
@@ -41,7 +47,17 @@ type CELValidation struct {
 }
 
 // ParseKCLFile parses a KCL schema file and returns a Schema structure
+// For backward compatibility, it returns the primary (last) schema
 func ParseKCLFile(filename string) (*Schema, error) {
+	result, err := ParseKCLFileWithSchemas(filename)
+	if err != nil {
+		return nil, err
+	}
+	return result.Primary, nil
+}
+
+// ParseKCLFileWithSchemas parses a KCL schema file and returns all schemas
+func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
@@ -49,11 +65,14 @@ func ParseKCLFile(filename string) (*Schema, error) {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-	var schema *Schema
+	var currentSchema *Schema
 	var currentField *Field
 	var inSchema bool
 	var inDocstring bool
 	var docstringLines []string
+	
+	schemas := make(map[string]*Schema)
+	var primarySchema *Schema
 
 	schemaRegex := regexp.MustCompile(`^\s*schema\s+(\w+)\s*:?\s*$`)
 	fieldRegex := regexp.MustCompile(`^\s*(\w+)\s*(\?)?:\s*(.+?)(?:\s*=\s*(.+))?\s*$`)
@@ -92,8 +111,8 @@ func ParseKCLFile(filename string) (*Schema, error) {
 				inDocstring = false
 				if currentField != nil {
 					currentField.Description = strings.Join(docstringLines, " ")
-				} else if schema != nil && schema.Description == "" {
-					schema.Description = strings.Join(docstringLines, " ")
+				} else if currentSchema != nil && currentSchema.Description == "" {
+					currentSchema.Description = strings.Join(docstringLines, " ")
 				}
 				docstringLines = nil
 			} else {
@@ -109,11 +128,14 @@ func ParseKCLFile(filename string) (*Schema, error) {
 
 		// Check for schema definition
 		if matches := schemaRegex.FindStringSubmatch(line); matches != nil {
-			if schema != nil {
-				// We found another schema, we only parse the first one
-				break
+			// Save previous schema if exists
+			if currentSchema != nil {
+				schemas[currentSchema.Name] = currentSchema
+				primarySchema = currentSchema
 			}
-			schema = &Schema{
+			
+			// Start new schema
+			currentSchema = &Schema{
 				Name:   matches[1],
 				Fields: []Field{},
 			}
@@ -122,7 +144,7 @@ func ParseKCLFile(filename string) (*Schema, error) {
 		}
 
 		// Parse field definitions
-		if inSchema && schema != nil {
+		if inSchema && currentSchema != nil {
 			if matches := fieldRegex.FindStringSubmatch(line); matches != nil {
 				fieldName := matches[1]
 				optional := matches[2] == "?"
@@ -151,8 +173,8 @@ func ParseKCLFile(filename string) (*Schema, error) {
 					minimumRegex, maximumRegex, enumRegex, immutableRegex, celValidationRegex)
 				pendingAnnotations = nil
 				
-				schema.Fields = append(schema.Fields, field)
-				currentField = &schema.Fields[len(schema.Fields)-1]
+				currentSchema.Fields = append(currentSchema.Fields, field)
+				currentField = &currentSchema.Fields[len(currentSchema.Fields)-1]
 			}
 		}
 	}
@@ -160,12 +182,21 @@ func ParseKCLFile(filename string) (*Schema, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("error reading file: %w", err)
 	}
+	
+	// Save the last schema
+	if currentSchema != nil {
+		schemas[currentSchema.Name] = currentSchema
+		primarySchema = currentSchema
+	}
 
-	if schema == nil {
+	if primarySchema == nil {
 		return nil, fmt.Errorf("no schema found in file")
 	}
 
-	return schema, nil
+	return &ParseResult{
+		Schemas: schemas,
+		Primary: primarySchema,
+	}, nil
 }
 
 // applyValidationAnnotations applies validation annotations from comments to a field

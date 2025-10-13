@@ -44,7 +44,7 @@ func main() {
 
 func run(cmd *cobra.Command, args []string) error {
 	// Parse KCL schema
-	schema, err := parser.ParseKCLFile(inputFile)
+	result, err := parser.ParseKCLFileWithSchemas(inputFile)
 	if err != nil {
 		return fmt.Errorf("failed to parse KCL file: %w", err)
 	}
@@ -58,8 +58,8 @@ func run(cmd *cobra.Command, args []string) error {
 		ClaimPlural: claimPlural,
 	}
 
-	// Generate XRD
-	xrd, err := generator.GenerateXRDWithOptions(schema, opts)
+	// Generate XRD with schema resolution
+	xrd, err := generator.GenerateXRDWithSchemasAndOptions(result.Primary, result.Schemas, opts)
 	if err != nil {
 		return fmt.Errorf("failed to generate XRD: %w", err)
 	}

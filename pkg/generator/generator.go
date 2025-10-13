@@ -108,6 +108,11 @@ func GenerateXRD(schema *parser.Schema, group, version string) (string, error) {
 
 // GenerateXRDWithOptions generates a Crossplane XRD from a parsed KCL schema with options
 func GenerateXRDWithOptions(schema *parser.Schema, opts XRDOptions) (string, error) {
+	return GenerateXRDWithSchemasAndOptions(schema, nil, opts)
+}
+
+// GenerateXRDWithSchemasAndOptions generates a Crossplane XRD with schema resolution for nested types
+func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]*parser.Schema, opts XRDOptions) (string, error) {
 	// Convert schema name to lowercase plural for the resource name
 	plural := strings.ToLower(schema.Name) + "s"
 	resourceName := plural + "." + opts.Group
@@ -173,7 +178,7 @@ func GenerateXRDWithOptions(schema *parser.Schema, opts XRDOptions) (string, err
 	}
 
 	for _, field := range schema.Fields {
-		propSchema := convertFieldToPropertySchema(field)
+		propSchema := convertFieldToPropertySchemaWithSchemas(field, schemas)
 		parametersSchema.Properties[field.Name] = propSchema
 		if field.Required {
 			parametersSchema.Required = append(parametersSchema.Required, field.Name)
@@ -203,6 +208,12 @@ func GenerateXRDWithOptions(schema *parser.Schema, opts XRDOptions) (string, err
 
 // convertFieldToPropertySchema converts a KCL field to an OpenAPI property schema
 func convertFieldToPropertySchema(field parser.Field) PropertySchema {
+	return convertFieldToPropertySchemaWithSchemas(field, nil)
+}
+
+// convertFieldToPropertySchemaWithSchemas converts a KCL field to an OpenAPI property schema
+// with support for nested schema expansion
+func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[string]*parser.Schema) PropertySchema {
 	schema := PropertySchema{}
 
 	// Map KCL types to OpenAPI types
@@ -219,19 +230,54 @@ func convertFieldToPropertySchema(field parser.Field) PropertySchema {
 		// Array type: [ElementType]
 		schema.Type = "array"
 		elementType := strings.TrimSuffix(strings.TrimPrefix(field.Type, "["), "]")
-		elementSchema := convertFieldToPropertySchema(parser.Field{Type: elementType})
+		elementSchema := convertFieldToPropertySchemaWithSchemas(parser.Field{Type: elementType}, schemas)
 		schema.Items = &elementSchema
 	case strings.HasPrefix(field.Type, "{") && strings.Contains(field.Type, ":"):
 		// Map/dict type: {str: str}
 		schema.Type = "object"
 	default:
-		// Assume it's an object type
-		schema.Type = "object"
+		// Check if it's a reference to another schema
+		if schemas != nil && schemas[field.Type] != nil {
+			// Expand the nested schema
+			schema.Type = "object"
+			schema.Properties = make(map[string]PropertySchema)
+			nestedSchema := schemas[field.Type]
+			
+			// Add description from the field if present (for the object itself)
+			if field.Description != "" {
+				schema.Description = field.Description
+			}
+			
+			for _, nestedField := range nestedSchema.Fields {
+				nestedProp := convertFieldToPropertySchemaWithSchemas(nestedField, schemas)
+				schema.Properties[nestedField.Name] = nestedProp
+				if nestedField.Required {
+					schema.Required = append(schema.Required, nestedField.Name)
+				}
+			}
+			
+			// Apply validation fields and defaults to the nested schema object
+			applyFieldValidationsAndDefaults(field, &schema)
+			
+			// Return early since we've already handled description and validations
+			return schema
+		} else {
+			// Assume it's an object type
+			schema.Type = "object"
+		}
 	}
 
 	if field.Description != "" {
 		schema.Description = field.Description
 	}
+	
+	applyFieldValidationsAndDefaults(field, &schema)
+
+	return schema
+}
+
+// applyFieldValidationsAndDefaults applies validation and default values to a property schema
+func applyFieldValidationsAndDefaults(field parser.Field, schema *PropertySchema) {
 
 	if field.Default != "" && field.Default != "Undefined" {
 		// Parse the default value to remove quotes if it's a string literal
@@ -307,6 +353,4 @@ func convertFieldToPropertySchema(field parser.Field) PropertySchema {
 			schema.XKubernetesValidations = append(schema.XKubernetesValidations, k8sVal)
 		}
 	}
-
-	return schema
 }

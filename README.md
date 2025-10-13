@@ -139,6 +139,42 @@ spec:
                     - spec
 ```
 
+### Nested Schema Support
+
+The tool supports nested schemas where one schema references another schema as a field type. The referenced schema's properties are automatically expanded inline in the generated XRD.
+
+Example:
+
+```kcl
+schema MyBucketParams:
+    labels?: {str:str}
+    region?: str = "eu-central-1"
+
+schema MyBucket:
+    parameters: MyBucketParams
+    bucketName: str
+```
+
+This generates an XRD where the `parameters` field is expanded to include all properties from `MyBucketParams`:
+
+```yaml
+properties:
+  spec:
+    properties:
+      parameters:
+        properties:
+          bucketName:
+            type: string
+          parameters:
+            type: object
+            properties:
+              labels:
+                type: object
+              region:
+                type: string
+                default: eu-central-1
+```
+
 ### Generating XRDs with Claims
 
 Crossplane XRDs can define both composite resources and claims. Claims are a more user-friendly way to provision resources. Use the `--with-claims` flag to generate claimable XRDs:
@@ -259,6 +295,7 @@ Check the `examples/` directory for more examples:
 - `examples/kcl/xpostgresql.k` - Composite resource with claims
 - `examples/kcl/validated.k` - Schema with validation annotations
 - `examples/kcl/advanced-validated.k` - Schema with CEL validation rules
+- `examples/kcl/nested-schema.k` - Nested schema references
 - `examples/xrd/` - Generated XRD outputs
 
 ## Development

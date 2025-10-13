@@ -183,3 +183,61 @@ func TestParseKCLFileWithValidations(t *testing.T) {
 		t.Errorf("Expected CEL rule 'self > 0', got '%s'", countField.CELValidations[0].Rule)
 	}
 }
+
+func TestParseKCLFileWithNestedSchemas(t *testing.T) {
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.k")
+	
+	content := `schema NestedSchema:
+    field1: str
+    field2: int
+
+schema MainSchema:
+    nested: NestedSchema
+    name: str
+`
+	
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	
+	result, err := ParseKCLFileWithSchemas(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+	}
+	
+	// Check that we have 2 schemas
+	if len(result.Schemas) != 2 {
+		t.Errorf("Expected 2 schemas, got %d", len(result.Schemas))
+	}
+	
+	// Check that both schemas exist
+	if result.Schemas["NestedSchema"] == nil {
+		t.Error("Expected NestedSchema to be parsed")
+	}
+	if result.Schemas["MainSchema"] == nil {
+		t.Error("Expected MainSchema to be parsed")
+	}
+	
+	// Check that primary schema is MainSchema (last one)
+	if result.Primary.Name != "MainSchema" {
+		t.Errorf("Expected primary schema to be 'MainSchema', got '%s'", result.Primary.Name)
+	}
+	
+	// Check nested schema fields
+	nestedSchema := result.Schemas["NestedSchema"]
+	if len(nestedSchema.Fields) != 2 {
+		t.Errorf("Expected NestedSchema to have 2 fields, got %d", len(nestedSchema.Fields))
+	}
+	
+	// Check main schema fields
+	mainSchema := result.Schemas["MainSchema"]
+	if len(mainSchema.Fields) != 2 {
+		t.Errorf("Expected MainSchema to have 2 fields, got %d", len(mainSchema.Fields))
+	}
+	
+	// Check that nested field has correct type
+	if mainSchema.Fields[0].Type != "NestedSchema" {
+		t.Errorf("Expected nested field type 'NestedSchema', got '%s'", mainSchema.Fields[0].Type)
+	}
+}
