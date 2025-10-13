@@ -370,6 +370,48 @@ schema ValidatedResource:
 
 For more information on Kubernetes CRD validation fields, see the [Kubernetes documentation](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/).
 
+### Arbitrary Properties with {any:any}
+
+Use the special `{any:any}` type syntax combined with `@preserveUnknownFields` to indicate objects or arrays that can accept arbitrary properties:
+
+```kcl
+schema FlexibleConfig:
+    # @preserveUnknownFields
+    # Configuration object that accepts any arbitrary key-value pairs
+    config: {any:any}
+    
+    # @preserveUnknownFields  
+    # List of arbitrary objects - each item can have any properties
+    metadata?: [{any:any}]
+    
+    # Standard map type (not arbitrary) - only string:string
+    labels?: {str:str}
+```
+
+This generates:
+
+```yaml
+config:
+  type: object
+  x-kubernetes-preserve-unknown-fields: true
+
+metadata:
+  type: array
+  items:
+    type: object
+    x-kubernetes-preserve-unknown-fields: true
+  x-kubernetes-preserve-unknown-fields: true
+
+labels:
+  type: object  # No x-kubernetes-preserve-unknown-fields
+```
+
+**Key Points:**
+- Use `{any:any}` for objects that accept arbitrary key-value pairs
+- Use `[{any:any}]` for arrays of objects with arbitrary properties
+- Always combine with `@preserveUnknownFields` annotation for proper XRD generation
+- Without `{any:any}`, regular object types like `{str:str}` are validated strictly
+
 ### CEL Validations
 
 Use `@validate` for complex validation rules using Common Expression Language (CEL):
@@ -415,6 +457,8 @@ Check the `examples/` directory for more examples:
 - `examples/kcl/nested-schema.k` - Nested schema references
 - `examples/kcl/multi-schema.k` - Multiple schemas with schema selection
 - `examples/kcl/dynatrace-with-metadata.k` - XRD metadata defined in KCL file
+- `examples/kcl/advanced-xrd-metadata.k` - @xrd annotation and printer columns in code
+- `examples/kcl/preserve-unknown-fields.k` - Using {any:any} for arbitrary properties
 - `examples/xrd/` - Generated XRD outputs
 
 ## Development

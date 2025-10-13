@@ -251,11 +251,36 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 		// Array type: [ElementType]
 		schema.Type = "array"
 		elementType := strings.TrimSuffix(strings.TrimPrefix(field.Type, "["), "]")
-		elementSchema := convertFieldToPropertySchemaWithSchemas(parser.Field{Type: elementType}, schemas)
-		schema.Items = &elementSchema
+		
+		// Check for [{any:any}] pattern - array of arbitrary objects
+		if strings.TrimSpace(elementType) == "{any:any}" {
+			// Array of objects with arbitrary properties
+			elementSchema := PropertySchema{
+				Type: "object",
+			}
+			// Apply preserve unknown fields if annotation is present
+			if field.PreserveUnknownFields {
+				preserve := true
+				elementSchema.XKubernetesPreserveUnknownFields = &preserve
+			}
+			schema.Items = &elementSchema
+		} else {
+			elementSchema := convertFieldToPropertySchemaWithSchemas(parser.Field{Type: elementType}, schemas)
+			schema.Items = &elementSchema
+		}
 	case strings.HasPrefix(field.Type, "{") && strings.Contains(field.Type, ":"):
-		// Map/dict type: {str: str}
+		// Map/dict type: {str: str} or {any:any}
 		schema.Type = "object"
+		
+		// Check for {any:any} pattern - object with arbitrary properties
+		if strings.TrimSpace(strings.Trim(field.Type, "{}")) == "any:any" {
+			// Object with arbitrary properties
+			// Apply preserve unknown fields if annotation is present
+			if field.PreserveUnknownFields {
+				preserve := true
+				schema.XKubernetesPreserveUnknownFields = &preserve
+			}
+		}
 	default:
 		// Check if it's a reference to another schema
 		if schemas != nil && schemas[field.Type] != nil {
