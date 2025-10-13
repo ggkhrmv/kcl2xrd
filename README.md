@@ -1,342 +1,125 @@
 # kcl2xrd
 
-A tool to convert KCL (KCL Configuration Language) schemas to Crossplane Composite Resource Definitions (XRDs).
+Convert KCL (KCL Configuration Language) schemas to Crossplane Composite Resource Definitions (XRDs).
+
+Inspired by [crossplane-tools](https://github.com/crossplane/crossplane-tools) and [kcl-openapi](https://github.com/kcl-lang/kcl-openapi).
 
 ## Quick Start
 
 ```bash
-# Clone the repository
+# Build from source
 git clone https://github.com/ggkhrmv/kcl2xrd.git
-cd kcl2xrd
+cd kcl2xrd && make build
 
-# Build the tool
-make build
+# Simple conversion with in-file metadata
+./bin/kcl2xrd -i examples/kcl/dynatrace-with-metadata.k -o output.yaml
 
-# Generate an XRD from a KCL schema with metadata in the file
-./bin/kcl2xrd --input examples/kcl/dynatrace-with-metadata.k \
-  --output dynatrace-xrd.yaml
+# Override with CLI flags
+./bin/kcl2xrd -i examples/kcl/postgresql.k -g database.example.org -o output.yaml
 
-# Or use CLI flags to override file metadata
-./bin/kcl2xrd --input examples/kcl/postgresql.k \
-  --group database.example.org \
-  --output postgresql-xrd.yaml
-
-# Generate with claims support (using CLI flags)
-./bin/kcl2xrd --input examples/kcl/postgresql.k \
-  --group database.example.org \
-  --with-claims \
-  --claim-kind PostgreSQLClaim \
-  --claim-plural postgresqlclaims \
-  --output postgresql-claim-xrd.yaml
+# Generate with claims support
+./bin/kcl2xrd -i examples/kcl/postgresql.k -g database.example.org --with-claims -o output.yaml
 ```
 
-## Overview
+## Key Features
 
-This project provides a converter that takes KCL schema files and generates Crossplane XRD YAML manifests. It's inspired by:
-- [crossplane-tools](https://github.com/crossplane/crossplane-tools) - XRD generator from Go structs
-- [kcl-openapi](https://github.com/kcl-lang/kcl-openapi) - CRDs to KCL schema converter
-
-## Features
-
-- **XRD Metadata in KCL Files**: Define schema selection, API group, version, categories, and more directly in KCL
-- **Above-Field Comments**: Multi-line field descriptions for better documentation
-- Parse KCL schema files and extract type definitions
-- Generate valid Crossplane XRD YAML manifests
-- Support for various KCL types: `str`, `int`, `float`, `bool`, arrays, and objects
-- Handle optional fields, required fields, and default values
-- **Comprehensive validation support**: Regex patterns, enums, ranges, CEL expressions
-- **Nested schema support**: Automatically expand referenced schemas
-- **Kubernetes annotations**: Support for x-kubernetes-* fields
-- Customizable API group and version for generated XRDs
+- **In-file XRD metadata** with `__xrd_` prefix variables - define everything in your KCL files
+- **`@xrd` annotation** - mark parent schema, ignore unrelated code
+- **Validation annotations** - patterns, enums, ranges, CEL expressions, immutability
+- **Nested schema expansion** - automatic reference resolution
+- **`{any:any}` syntax** - arbitrary property objects with `@preserveUnknownFields`
+- **Claims support** - automatic X-prefix handling for composite resources
+- **Complete Kubernetes annotations** - all x-kubernetes-* fields supported
 
 ## Installation
 
-### Download Pre-built Binaries (Recommended)
+### Pre-built Binaries
 
-Download the latest release for your platform from the [GitHub Releases](https://github.com/ggkhrmv/kcl2xrd/releases) page.
+Download from [GitHub Releases](https://github.com/ggkhrmv/kcl2xrd/releases):
 
-**Linux:**
 ```bash
-# AMD64
+# Linux (AMD64)
 curl -LO https://github.com/ggkhrmv/kcl2xrd/releases/latest/download/kcl2xrd-linux-amd64
-chmod +x kcl2xrd-linux-amd64
-sudo mv kcl2xrd-linux-amd64 /usr/local/bin/kcl2xrd
+chmod +x kcl2xrd-linux-amd64 && sudo mv kcl2xrd-linux-amd64 /usr/local/bin/kcl2xrd
 
-# ARM64
-curl -LO https://github.com/ggkhrmv/kcl2xrd/releases/latest/download/kcl2xrd-linux-arm64
-chmod +x kcl2xrd-linux-arm64
-sudo mv kcl2xrd-linux-arm64 /usr/local/bin/kcl2xrd
-```
-
-**macOS:**
-```bash
-# Intel Mac
+# macOS (Intel)
 curl -LO https://github.com/ggkhrmv/kcl2xrd/releases/latest/download/kcl2xrd-darwin-amd64
-chmod +x kcl2xrd-darwin-amd64
-sudo mv kcl2xrd-darwin-amd64 /usr/local/bin/kcl2xrd
+chmod +x kcl2xrd-darwin-amd64 && sudo mv kcl2xrd-darwin-amd64 /usr/local/bin/kcl2xrd
 
-# Apple Silicon (M1/M2)
+# macOS (Apple Silicon)
 curl -LO https://github.com/ggkhrmv/kcl2xrd/releases/latest/download/kcl2xrd-darwin-arm64
-chmod +x kcl2xrd-darwin-arm64
-sudo mv kcl2xrd-darwin-arm64 /usr/local/bin/kcl2xrd
-```
-
-**Windows:**
-```powershell
-# Download from: https://github.com/ggkhrmv/kcl2xrd/releases/latest/download/kcl2xrd-windows-amd64.exe
-# Add to PATH or run directly
+chmod +x kcl2xrd-darwin-arm64 && sudo mv kcl2xrd-darwin-arm64 /usr/local/bin/kcl2xrd
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/ggkhrmv/kcl2xrd.git
-cd kcl2xrd
-make build
-# Binary will be at ./bin/kcl2xrd
-```
-
-Or using Go directly:
-```bash
 go install github.com/ggkhrmv/kcl2xrd/cmd/kcl2xrd@latest
+# or
+git clone https://github.com/ggkhrmv/kcl2xrd.git && cd kcl2xrd && make build
 ```
 
 ## Usage
 
-### Basic Usage
-
-**With metadata in KCL file (recommended):**
-```bash
-kcl2xrd --input <kcl-file> [--output <output-file>]
-```
-
-**With CLI flags:**
-```bash
-kcl2xrd --input <kcl-file> --group <api-group> [--version <version>] [--output <output-file>]
-```
-
-### XRD Metadata in KCL Files
-
-You can define XRD metadata directly in your KCL file for full automation. This eliminates the need to track which schema to use and what flags to pass:
+### Basic Conversion
 
 ```kcl
-# XRD Metadata - using unique __xrd_ prefix to avoid naming conflicts
-__xrd_kind = "DynatraceAlerting"
-__xrd_version = "v1alpha1"
-__xrd_group = "monitoring.crossplane.io"
-__xrd_categories = ["monitoring", "alerting"]
-__xrd_served = True
-__xrd_referenceable = True
-__xrd_printer_columns = ["Status:string:.status.conditions[?(@.type=='Ready')].status:Ready Status", "Age:date:.metadata.creationTimestamp:Age"]
-
-# Mark the parent schema with @xrd annotation
-# @xrd
-schema DynatraceAlerting:
-    # Above-field comments become field descriptions
-    # They support multiple lines for better documentation
-    name: str
-    
-schema HelperSchema:
-    # This schema won't be converted on its own
-    # unless referenced by the @xrd marked schema
-    field: str
-```
-
-With metadata in the file, you only need:
-```bash
-kcl2xrd --input myschema.k --output myxrd.yaml
-```
-
-CLI flags still work and override file metadata when specified.
-
-**Available Metadata Variables:**
-- `__xrd_kind` - Name of the schema to convert (alternative to @xrd annotation)
-- `__xrd_version` - API version (default: v1alpha1)
-- `__xrd_group` - API group for the XRD
-- `__xrd_categories` - List of categories
-- `__xrd_served` - Whether version is served (True/False)
-- `__xrd_referenceable` - Whether version is referenceable (True/False)
-- `__xrd_printer_columns` - List of printer columns in format "Name:Type:JSONPath:Description"
-
-**@xrd Annotation:**
-Use the `@xrd` annotation to mark which schema should be the parent/root schema for XRD generation:
-
-```kcl
-# @xrd
-schema MyMainSchema:
-    nested: HelperSchema
-    
-schema HelperSchema:
-    field: str
-    
-schema UnrelatedSchema:
-    # This won't be included since it's not referenced by MyMainSchema
-    other: str
-```
-
-This ensures only the marked schema and its nested references are converted, ignoring any other schemas or KCL code in the file.
-
-### Options
-
-- `-i, --input`: Input KCL schema file (required)
-- `-g, --group`: API group for the XRD (optional if specified in KCL file via `__xrd_group`)
-- `-v, --version`: API version for the XRD (default: `v1alpha1` or from `__xrd_version`)
-- `-s, --schema`: Name of the schema to convert (defaults to @xrd marked schema, `__xrd_kind`, or last schema in file)
-- `-o, --output`: Output XRD file (if not specified, outputs to stdout)
-- `--with-claims`: Generate XRD with claimNames (for creating claimable resources)
-- `--claim-kind`: Custom kind for the claim (defaults to schema name without 'X' prefix)
-- `--claim-plural`: Custom plural for the claim (auto-generated if not specified)
-- `--served`: Mark version as served (default: true or from `__xrd_served`)
-- `--referenceable`: Mark version as referenceable (default: true or from `__xrd_referenceable`)
-- `--categories`: Categories for the XRD (comma-separated, overrides `__xrd_categories`)
-- `--printer-columns`: Additional printer columns (format: `name:type:jsonPath:description`, overrides `__xrd_printer_columns`)
-
-### Metadata Variables (in KCL file)
-
-All metadata variables use the `__xrd_` prefix to avoid naming conflicts with KCL code:
-
-- `__xrd_kind = "SchemaName"`: Specifies which schema to convert
-- `__xrd_version = "v1alpha1"`: API version for the XRD
-- `__xrd_group = "api.example.org"`: API group for the XRD
-- `__xrd_categories = ["cat1", "cat2"]`: Categories for the XRD
-- `__xrd_served = True/False`: Whether version is served
-- `__xrd_referenceable = True/False`: Whether version is referenceable
-- `__xrd_printer_columns = ["Name:Type:JSONPath:Description"]`: Additional printer columns
-
-### Example
-
-Given a KCL schema file `postgresql.k`:
-
-```kcl
+# postgresql.k
 schema PostgreSQLInstance:
-    r"""
-    PostgreSQL Database Instance
-    
-    Attributes
-    ----------
-    storageGB : int, required
-        The amount of storage in gigabytes
-    instanceSize : str, optional
-        The size of the database instance
-    version : str, optional
-        The PostgreSQL version to deploy
-    """
-    
+    # Storage in GB (required)
     storageGB: int
     
-    instanceSize?: str
-    
-    version?: str = "15"
+    # Instance size  
+    instanceSize?: str = "small"
 ```
-
-Generate an XRD:
 
 ```bash
-kcl2xrd --input postgresql.k --group database.example.org --output postgresql.yaml
+kcl2xrd -i postgresql.k -g database.example.org -o postgresql.yaml
 ```
 
-This produces:
-
-```yaml
-apiVersion: apiextensions.crossplane.io/v1
-kind: CompositeResourceDefinition
-metadata:
-    name: postgresqlinstances.database.example.org
-spec:
-    group: database.example.org
-    names:
-        kind: PostgreSQLInstance
-        plural: postgresqlinstances
-    versions:
-        - name: v1alpha1
-          served: true
-          referenceable: true
-          schema:
-            openAPIV3Schema:
-                type: object
-                properties:
-                    spec:
-                        type: object
-                        properties:
-                            parameters:
-                                type: object
-                                properties:
-                                    storageGB:
-                                        type: integer
-                                    instanceSize:
-                                        type: string
-                                    version:
-                                        type: string
-                                        default: "15"
-                                required:
-                                    - storageGB
-                        required:
-                            - parameters
-                required:
-                    - spec
-```
-
-### Nested Schema Support
-
-The tool supports nested schemas where one schema references another schema as a field type. The referenced schema's properties are automatically expanded inline in the generated XRD.
-
-Example:
+### With In-File Metadata
 
 ```kcl
-schema MyBucketParams:
-    labels?: {str:str}
-    region?: str = "eu-central-1"
+# Full automation - no CLI flags needed
+__xrd_kind = "DynatraceAlerting"
+__xrd_group = "monitoring.crossplane.io"
+__xrd_categories = ["monitoring", "alerting"]
 
-schema MyBucket:
-    parameters: MyBucketParams
-    bucketName: str
+# @xrd
+schema DynatraceAlerting:
+    name: str
+    config: {str:str}
 ```
-
-This generates an XRD where the `parameters` field is expanded to include all properties from `MyBucketParams`:
-
-```yaml
-properties:
-  spec:
-    properties:
-      parameters:
-        properties:
-          bucketName:
-            type: string
-          parameters:
-            type: object
-            properties:
-              labels:
-                type: object
-              region:
-                type: string
-                default: eu-central-1
-```
-
-### Generating XRDs with Claims
-
-Crossplane XRDs can define both composite resources and claims. Claims are a more user-friendly way to provision resources. Use the `--with-claims` flag to generate claimable XRDs:
 
 ```bash
-kcl2xrd --input xpostgresql.k --group database.example.org --with-claims --output xpostgresql.yaml
+kcl2xrd -i file.k -o output.yaml
 ```
 
-For a schema named `XPostgreSQLInstance`, this will automatically generate:
-- Composite resource: `XPostgreSQLInstance` (kind) / `xpostgresqlinstances` (plural)
-- Claim: `PostgreSQLInstance` (kind) / `postgresqlinstances` (plural)
+### Claims Support
 
-The 'X' prefix is automatically removed from the claim name following Crossplane conventions.
-
-You can also specify custom claim names:
+When using `--with-claims`, the tool automatically handles X-prefix naming:
 
 ```bash
-kcl2xrd --input myresource.k --group example.org --with-claims \
-  --claim-kind MyCustomClaim --claim-plural mycustomclaims \
-  --output myresource.yaml
+# Schema: PostgreSQLInstance (no X-prefix)
+kcl2xrd -i postgresql.k -g db.example.org --with-claims -o output.yaml
+
+# Generates:
+# - XRD Kind: XPostgreSQLInstance (X-prefix added)
+# - Claim Kind: PostgreSQLInstance (original name)
 ```
 
-## Supported KCL Types
+If schema already has X-prefix:
 
-The converter supports the following KCL type mappings:
+```bash
+# Schema: XDatabase (has X-prefix)
+kcl2xrd -i xdatabase.k -g db.example.org --with-claims -o output.yaml
+
+# Generates:
+# - XRD Kind: XDatabase (keeps X-prefix)
+# - Claim Kind: Database (X-prefix removed)
+```
+
+## Type Mappings
 
 | KCL Type | OpenAPI Type | Example |
 |----------|---------------|---------|
@@ -344,42 +127,11 @@ The converter supports the following KCL type mappings:
 | `int` | `integer` | `count: int` |
 | `float` | `number` | `price: float` |
 | `bool` | `boolean` | `enabled: bool` |
-| `[T]` | `array` with items of type T | `tags: [str]` |
+| `[T]` | `array` | `tags: [str]` |
 | `{K:V}` | `object` | `labels: {str:str}` |
-
-### Field Modifiers
-
-- **Required fields**: `fieldName: Type`
-- **Optional fields**: `fieldName?: Type`
-- **Default values**: `fieldName?: Type = value`
-- **Field descriptions**: Use above-field comments for multi-line support
-
-Example:
-```kcl
-schema MyResource:
-    # This is the resource name
-    # It must be unique within the namespace
-    name: str
-    
-    # Optional field with default value
-    region?: str = "us-east-1"
-```
-
-## Multi-Schema Files
-
-When a KCL file contains multiple schemas, use the `--schema` flag to specify which one to convert:
-
-```bash
-kcl2xrd -i file.k -g api.example.org --schema DynatraceAlerting
-```
-
-If not specified, the last schema in the file is used.
+| `{any:any}` | `object` + `x-kubernetes-preserve-unknown-fields` | `config: {any:any}` |
 
 ## Validation Annotations
-
-The tool supports rich validation annotations using comments to generate OpenAPI validation constraints and Kubernetes-specific validations:
-
-### Basic Validations
 
 ```kcl
 schema ValidatedResource:
@@ -388,172 +140,77 @@ schema ValidatedResource:
     # @maxLength(63)
     name: str
     
-    # @minimum(0)
-    # @maximum(100)
-    age?: int
-    
-    # @enum(["active", "inactive", "pending"])
-    status?: str = "pending"
+    # @enum(["active", "inactive"])
+    status?: str = "active"
     
     # @immutable
     resourceId: str
-```
-
-### Supported Validation Annotations
-
-| Annotation | Applies To | Description | Example |
-|------------|-----------|-------------|---------|
-| `@pattern("regex")` | string | Regex pattern validation | `@pattern("^[a-z]+$")` |
-| `@minLength(n)` | string | Minimum string length | `@minLength(3)` |
-| `@maxLength(n)` | string | Maximum string length | `@maxLength(255)` |
-| `@minimum(n)` | number | Minimum numeric value | `@minimum(0)` |
-| `@maximum(n)` | number | Maximum numeric value | `@maximum(100)` |
-| `@enum([...])` | any | Enumeration of allowed values | `@enum(["a", "b", "c"])` |
-| `@immutable` | any | Field cannot be changed after creation (x-kubernetes-immutable) | `@immutable` |
-| `@validate("rule", "msg")` | any | CEL validation expression | `@validate("self > 0", "Must be positive")` |
-| `@preserveUnknownFields` | object/array | Allow additional undefined properties (x-kubernetes-preserve-unknown-fields) | `@preserveUnknownFields` |
-| `@mapType("type")` | object | Kubernetes map merge strategy - atomic or granular (x-kubernetes-map-type) | `@mapType("atomic")` |
-| `@listType("type")` | array | Kubernetes list type - atomic, set, or map (x-kubernetes-list-type) | `@listType("atomic")` |
-| `@listMapKeys(["key"])` | array | Keys for map-type lists (x-kubernetes-list-map-keys) | `@listMapKeys(["name"])` |
-
-For more information on Kubernetes CRD validation fields, see the [Kubernetes documentation](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/).
-
-### Arbitrary Properties with {any:any}
-
-Use the special `{any:any}` type syntax combined with `@preserveUnknownFields` to indicate objects or arrays that can accept arbitrary properties:
-
-```kcl
-schema FlexibleConfig:
-    # @preserveUnknownFields
-    # Configuration object that accepts any arbitrary key-value pairs
-    config: {any:any}
     
-    # @preserveUnknownFields  
-    # List of arbitrary objects - each item can have any properties
-    metadata?: [{any:any}]
-    
-    # Standard map type (not arbitrary) - only string:string
-    labels?: {str:str}
-```
-
-This generates:
-
-```yaml
-config:
-  type: object
-  x-kubernetes-preserve-unknown-fields: true
-
-metadata:
-  type: array
-  items:
-    type: object
-    x-kubernetes-preserve-unknown-fields: true
-  x-kubernetes-preserve-unknown-fields: true
-
-labels:
-  type: object  # No x-kubernetes-preserve-unknown-fields
-```
-
-**Key Points:**
-- Use `{any:any}` for objects that accept arbitrary key-value pairs
-- Use `[{any:any}]` for arrays of objects with arbitrary properties
-- Always combine with `@preserveUnknownFields` annotation for proper XRD generation
-- Without `{any:any}`, regular object types like `{str:str}` are validated strictly
-
-### CEL Validations
-
-Use `@validate` for complex validation rules using Common Expression Language (CEL):
-
-```kcl
-schema DateRange:
-    # @pattern("^\\d{4}-\\d{2}-\\d{2}$")
-    startDate: str
-    
-    # @pattern("^\\d{4}-\\d{2}-\\d{2}$")
-    # @validate("self >= self.parent.startDate", "End date must be after start date")
-    endDate: str
-
-schema ScalableResource:
-    # @minimum(1)
-    # @validate("self <= self.parent.maxReplicas", "Min must be <= max")
-    minReplicas?: int = 1
-    
+    # @minimum(0)
     # @maximum(100)
-    # @validate("self >= self.parent.minReplicas", "Max must be >= min")
-    maxReplicas?: int = 10
+    replicas?: int = 1
+    
+    # @preserveUnknownFields
+    # @mapType("atomic")
+    settings?: {any:any}
+    
+    # @listType("set")
+    tags?: [str]
+    
+    # @validate("self > 0", "Must be positive")
+    value: int
 ```
 
-Generated XRD includes:
+## Metadata Variables
 
-```yaml
-x-kubernetes-validations:
-  - rule: self >= self.parent.startDate
-    message: End date must be after start date
-```
+Define in your KCL file with `__xrd_` prefix:
 
-## Supported KCL Types
+- `__xrd_kind` - Schema to convert
+- `__xrd_group` - API group
+- `__xrd_version` - API version (default: v1alpha1)
+- `__xrd_categories` - Categories list
+- `__xrd_served` - Served flag (True/False)
+- `__xrd_referenceable` - Referenceable flag (True/False)
+- `__xrd_printer_columns` - Printer columns list
+
+## CLI Options
+
+- `-i, --input`: Input KCL file (required)
+- `-g, --group`: API group (optional if `__xrd_group` in file)
+- `-o, --output`: Output file (stdout if not specified)
+- `--with-claims`: Generate claimable XRD with automatic X-prefix handling
+- `--schema`: Select specific schema
+- `--version`: API version (default: v1alpha1)
+- `--categories`: Override categories
+- `--printer-columns`: Override printer columns
 
 ## Examples
 
-Check the `examples/` directory for comprehensive examples covering all features:
+See [`examples/`](examples/) directory:
 
-1. **`examples/kcl/postgresql.k`** - Basic schema with required/optional fields and defaults
-2. **`examples/kcl/validated.k`** - Validation features (patterns, enums, constraints, immutability, CEL)
-3. **`examples/kcl/nested-schema.k`** - Nested schema expansion with type references
-4. **`examples/kcl/dynatrace-with-metadata.k`** - Full in-file metadata (@xrd annotation, printer columns, categories)
-5. **`examples/kcl/preserve-unknown-fields.k`** - Using {any:any} syntax for arbitrary properties
-
-Each example demonstrates multiple features. Generated XRDs are in `examples/xrd/`.
+1. **postgresql.k** - Basic schema with optional fields
+2. **validated.k** - Validation annotations
+3. **nested-schema.k** - Nested schema references
+4. **dynatrace-with-metadata.k** - Full in-file metadata
+5. **preserve-unknown-fields.k** - Arbitrary properties with `{any:any}`
 
 ## Development
 
-### Running Tests
-
 ```bash
-go test ./...
+# Build
+make build
+
+# Run tests
+make test
+
+# Generate examples
+make examples
+
+# Create release (requires tag)
+git tag v1.0.0 && git push origin v1.0.0
 ```
-
-### Building
-
-```bash
-go build -o bin/kcl2xrd ./cmd/kcl2xrd
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## How This Fits in the Crossplane Ecosystem
-
-This tool bridges the gap between KCL schemas and Crossplane XRDs, complementing existing tools:
-
-```
-┌─────────────────┐
-│   Go Structs    │
-└────────┬────────┘
-         │ crossplane-tools
-         ▼
-    ┌────────┐
-    │  XRDs  │ ◄─── kcl2xrd (this tool)
-    └────┬───┘
-         │                    ┌──────────────┐
-         │                    │ KCL Schemas  │
-         │                    └──────▲───────┘
-         │                           │
-         │                           │ kcl-openapi
-         │                           │
-         │                    ┌──────┴───────┐
-         └───────────────────►│     CRDs     │
-                              └──────────────┘
-```
-
-**Workflow:**
-1. **CRDs → KCL**: Use `kcl-openapi` to convert Kubernetes CRDs to KCL schemas
-2. **KCL → XRDs**: Use `kcl2xrd` (this tool) to generate Crossplane XRDs from KCL schemas
-3. **Go → XRDs**: Use `crossplane-tools` to generate XRDs from Go structs
-
-This enables teams already using KCL for configuration management to easily create Crossplane composite resources.
 
 ## License
 
-Apache License 2.0 - See [LICENSE](LICENSE) file for details.
+Apache License 2.0
+go install github.com/ggkhrmv/kcl2xrd/cmd/kcl2xrd@latest

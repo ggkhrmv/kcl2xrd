@@ -134,7 +134,48 @@ func GenerateXRDWithOptions(schema *parser.Schema, opts XRDOptions) (string, err
 func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]*parser.Schema, opts XRDOptions) (string, error) {
 	// Convert schema name to lowercase plural for the resource name
 	plural := strings.ToLower(schema.Name) + "s"
-	resourceName := plural + "." + opts.Group
+	// Determine names based on claims mode
+	var xrdKind, xrdPlural string
+	var claimKind, claimPlural string
+	
+	if opts.WithClaims {
+		// When using claims, the XRD kind should have X prefix
+		// and the claim kind is the original name (without X prefix)
+		
+		// XRD kind should have X prefix
+		if strings.HasPrefix(schema.Name, "X") {
+			xrdKind = schema.Name // Already has X prefix
+			// Claim kind is schema name without X
+			if opts.ClaimKind == "" {
+				claimKind = strings.TrimPrefix(schema.Name, "X")
+			} else {
+				claimKind = opts.ClaimKind
+			}
+		} else {
+			// Schema name doesn't have X, so add it for XRD
+			xrdKind = "X" + schema.Name
+			// Claim kind is the original schema name
+			if opts.ClaimKind == "" {
+				claimKind = schema.Name
+			} else {
+				claimKind = opts.ClaimKind
+			}
+		}
+		
+		// Generate plurals
+		xrdPlural = strings.ToLower(xrdKind) + "s"
+		if opts.ClaimPlural == "" {
+			claimPlural = strings.ToLower(claimKind) + "s"
+		} else {
+			claimPlural = opts.ClaimPlural
+		}
+	} else {
+		// Without claims, use schema name as-is for XRD
+		xrdKind = schema.Name
+		xrdPlural = plural
+	}
+	
+	resourceName := xrdPlural + "." + opts.Group
 
 	xrd := XRD{
 		APIVersion: "apiextensions.crossplane.io/v1",
@@ -145,8 +186,8 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 		Spec: XRDSpec{
 			Group: opts.Group,
 			Names: Names{
-				Kind:   schema.Name,
-				Plural: plural,
+				Kind:   xrdKind,
+				Plural: xrdPlural,
 			},
 			Versions: []Version{
 				{
@@ -168,23 +209,6 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 
 	// Add claim names if requested
 	if opts.WithClaims {
-		claimKind := opts.ClaimKind
-		claimPlural := opts.ClaimPlural
-
-		// Auto-generate claim names if not provided
-		if claimKind == "" {
-			// Remove 'X' prefix if present (common Crossplane convention)
-			if strings.HasPrefix(schema.Name, "X") {
-				claimKind = strings.TrimPrefix(schema.Name, "X")
-			} else {
-				claimKind = schema.Name
-			}
-		}
-
-		if claimPlural == "" {
-			claimPlural = strings.ToLower(claimKind) + "s"
-		}
-
 		xrd.Spec.ClaimNames = &ClaimNames{
 			Kind:   claimKind,
 			Plural: claimPlural,
