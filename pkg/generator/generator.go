@@ -24,15 +24,31 @@ type Metadata struct {
 
 // XRDSpec represents the spec section of an XRD
 type XRDSpec struct {
-	Group   string    `yaml:"group"`
-	Names   Names     `yaml:"names"`
-	Versions []Version `yaml:"versions"`
+	Group      string      `yaml:"group"`
+	Names      Names       `yaml:"names"`
+	ClaimNames *ClaimNames `yaml:"claimNames,omitempty"`
+	Versions   []Version   `yaml:"versions"`
 }
 
 // Names represents the names section of an XRD spec
 type Names struct {
 	Kind   string `yaml:"kind"`
 	Plural string `yaml:"plural"`
+}
+
+// ClaimNames represents optional claim names in an XRD spec
+type ClaimNames struct {
+	Kind   string `yaml:"kind"`
+	Plural string `yaml:"plural"`
+}
+
+// XRDOptions contains options for generating an XRD
+type XRDOptions struct {
+	Group       string
+	Version     string
+	WithClaims  bool
+	ClaimKind   string
+	ClaimPlural string
 }
 
 // Version represents a version in an XRD spec
@@ -67,10 +83,19 @@ type PropertySchema struct {
 }
 
 // GenerateXRD generates a Crossplane XRD from a parsed KCL schema
+// Deprecated: Use GenerateXRDWithOptions for more control
 func GenerateXRD(schema *parser.Schema, group, version string) (string, error) {
+	return GenerateXRDWithOptions(schema, XRDOptions{
+		Group:   group,
+		Version: version,
+	})
+}
+
+// GenerateXRDWithOptions generates a Crossplane XRD from a parsed KCL schema with options
+func GenerateXRDWithOptions(schema *parser.Schema, opts XRDOptions) (string, error) {
 	// Convert schema name to lowercase plural for the resource name
 	plural := strings.ToLower(schema.Name) + "s"
-	resourceName := plural + "." + group
+	resourceName := plural + "." + opts.Group
 
 	xrd := XRD{
 		APIVersion: "apiextensions.crossplane.io/v1",
@@ -79,14 +104,14 @@ func GenerateXRD(schema *parser.Schema, group, version string) (string, error) {
 			Name: resourceName,
 		},
 		Spec: XRDSpec{
-			Group: group,
+			Group: opts.Group,
 			Names: Names{
 				Kind:   schema.Name,
 				Plural: plural,
 			},
 			Versions: []Version{
 				{
-					Name:          version,
+					Name:          opts.Version,
 					Served:        true,
 					Referenceable: true,
 					Schema: VersionSchema{
@@ -98,6 +123,31 @@ func GenerateXRD(schema *parser.Schema, group, version string) (string, error) {
 				},
 			},
 		},
+	}
+
+	// Add claim names if requested
+	if opts.WithClaims {
+		claimKind := opts.ClaimKind
+		claimPlural := opts.ClaimPlural
+
+		// Auto-generate claim names if not provided
+		if claimKind == "" {
+			// Remove 'X' prefix if present (common Crossplane convention)
+			if strings.HasPrefix(schema.Name, "X") {
+				claimKind = strings.TrimPrefix(schema.Name, "X")
+			} else {
+				claimKind = schema.Name
+			}
+		}
+
+		if claimPlural == "" {
+			claimPlural = strings.ToLower(claimKind) + "s"
+		}
+
+		xrd.Spec.ClaimNames = &ClaimNames{
+			Kind:   claimKind,
+			Plural: claimPlural,
+		}
 	}
 
 	// Build the spec.parameters structure

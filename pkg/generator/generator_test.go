@@ -152,3 +152,107 @@ func TestGenerateXRDWithDefaults(t *testing.T) {
 		t.Error("Boolean default should not be quoted")
 	}
 }
+
+func TestGenerateXRDWithClaims(t *testing.T) {
+	schema := &parser.Schema{
+		Name: "XTestResource",
+		Fields: []parser.Field{
+			{
+				Name:     "field1",
+				Type:     "str",
+				Required: true,
+			},
+		},
+	}
+	
+	opts := XRDOptions{
+		Group:      "example.org",
+		Version:    "v1alpha1",
+		WithClaims: true,
+	}
+	
+	xrdYAML, err := GenerateXRDWithOptions(schema, opts)
+	if err != nil {
+		t.Fatalf("GenerateXRDWithOptions failed: %v", err)
+	}
+	
+	// Parse the YAML
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Generated XRD is not valid YAML: %v", err)
+	}
+	
+	// Check spec
+	spec, ok := xrd["spec"].(map[string]interface{})
+	if !ok {
+		t.Fatal("spec is not a map")
+	}
+	
+	// Check claimNames exists
+	claimNames, ok := spec["claimNames"].(map[string]interface{})
+	if !ok {
+		t.Fatal("claimNames is not present or not a map")
+	}
+	
+	// Check that 'X' prefix was removed
+	if claimNames["kind"] != "TestResource" {
+		t.Errorf("Expected claim kind 'TestResource', got '%v'", claimNames["kind"])
+	}
+	
+	if claimNames["plural"] != "testresources" {
+		t.Errorf("Expected claim plural 'testresources', got '%v'", claimNames["plural"])
+	}
+}
+
+func TestGenerateXRDWithCustomClaimNames(t *testing.T) {
+	schema := &parser.Schema{
+		Name: "XTestResource",
+		Fields: []parser.Field{
+			{
+				Name:     "field1",
+				Type:     "str",
+				Required: true,
+			},
+		},
+	}
+	
+	opts := XRDOptions{
+		Group:       "example.org",
+		Version:     "v1alpha1",
+		WithClaims:  true,
+		ClaimKind:   "CustomClaim",
+		ClaimPlural: "customclaims",
+	}
+	
+	xrdYAML, err := GenerateXRDWithOptions(schema, opts)
+	if err != nil {
+		t.Fatalf("GenerateXRDWithOptions failed: %v", err)
+	}
+	
+	// Parse the YAML
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Generated XRD is not valid YAML: %v", err)
+	}
+	
+	// Check spec
+	spec, ok := xrd["spec"].(map[string]interface{})
+	if !ok {
+		t.Fatal("spec is not a map")
+	}
+	
+	// Check claimNames
+	claimNames, ok := spec["claimNames"].(map[string]interface{})
+	if !ok {
+		t.Fatal("claimNames is not present or not a map")
+	}
+	
+	// Check custom names are used
+	if claimNames["kind"] != "CustomClaim" {
+		t.Errorf("Expected claim kind 'CustomClaim', got '%v'", claimNames["kind"])
+	}
+	
+	if claimNames["plural"] != "customclaims" {
+		t.Errorf("Expected claim plural 'customclaims', got '%v'", claimNames["plural"])
+	}
+}

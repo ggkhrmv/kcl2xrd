@@ -10,10 +10,13 @@ import (
 )
 
 var (
-	inputFile  string
-	outputFile string
-	group      string
-	version    string
+	inputFile       string
+	outputFile      string
+	group           string
+	version         string
+	withClaims      bool
+	claimKind       string
+	claimPlural     string
 )
 
 func main() {
@@ -28,6 +31,9 @@ func main() {
 	rootCmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output XRD file (stdout if not specified)")
 	rootCmd.Flags().StringVarP(&group, "group", "g", "", "API group for the XRD (required)")
 	rootCmd.Flags().StringVarP(&version, "version", "v", "v1alpha1", "API version for the XRD")
+	rootCmd.Flags().BoolVar(&withClaims, "with-claims", false, "Generate XRD with claimNames")
+	rootCmd.Flags().StringVar(&claimKind, "claim-kind", "", "Kind for the claim (defaults to schema name without 'X' prefix)")
+	rootCmd.Flags().StringVar(&claimPlural, "claim-plural", "", "Plural for the claim (auto-generated if not specified)")
 	rootCmd.MarkFlagRequired("input")
 	rootCmd.MarkFlagRequired("group")
 
@@ -43,8 +49,17 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to parse KCL file: %w", err)
 	}
 
+	// Prepare generator options
+	opts := generator.XRDOptions{
+		Group:       group,
+		Version:     version,
+		WithClaims:  withClaims,
+		ClaimKind:   claimKind,
+		ClaimPlural: claimPlural,
+	}
+
 	// Generate XRD
-	xrd, err := generator.GenerateXRD(schema, group, version)
+	xrd, err := generator.GenerateXRDWithOptions(schema, opts)
 	if err != nil {
 		return fmt.Errorf("failed to generate XRD: %w", err)
 	}

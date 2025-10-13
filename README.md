@@ -40,6 +40,9 @@ kcl2xrd --input <kcl-file> --group <api-group> [--version <version>] [--output <
 - `-g, --group`: API group for the XRD (required)
 - `-v, --version`: API version for the XRD (default: `v1alpha1`)
 - `-o, --output`: Output XRD file (if not specified, outputs to stdout)
+- `--with-claims`: Generate XRD with claimNames (for creating claimable resources)
+- `--claim-kind`: Custom kind for the claim (defaults to schema name without 'X' prefix)
+- `--claim-plural`: Custom plural for the claim (auto-generated if not specified)
 
 ### Example
 
@@ -112,6 +115,28 @@ spec:
                             - parameters
                 required:
                     - spec
+```
+
+### Generating XRDs with Claims
+
+Crossplane XRDs can define both composite resources and claims. Claims are a more user-friendly way to provision resources. Use the `--with-claims` flag to generate claimable XRDs:
+
+```bash
+kcl2xrd --input xpostgresql.k --group database.example.org --with-claims --output xpostgresql.yaml
+```
+
+For a schema named `XPostgreSQLInstance`, this will automatically generate:
+- Composite resource: `XPostgreSQLInstance` (kind) / `xpostgresqlinstances` (plural)
+- Claim: `PostgreSQLInstance` (kind) / `postgresqlinstances` (plural)
+
+The 'X' prefix is automatically removed from the claim name following Crossplane conventions.
+
+You can also specify custom claim names:
+
+```bash
+kcl2xrd --input myresource.k --group example.org --with-claims \
+  --claim-kind MyCustomClaim --claim-plural mycustomclaims \
+  --output myresource.yaml
 ```
 
 ## Supported KCL Types

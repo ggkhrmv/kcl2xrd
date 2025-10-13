@@ -26,6 +26,7 @@ install:
 examples: build
 	./bin/kcl2xrd --input examples/kcl/postgresql.k --group database.example.org --output examples/xrd/postgresql.yaml
 	./bin/kcl2xrd --input examples/kcl/k8scluster.k --group platform.example.org --version v1beta1 --output examples/xrd/k8scluster.yaml
+	./bin/kcl2xrd --input examples/kcl/xpostgresql.k --group database.example.org --with-claims --output examples/xrd/xpostgresql.yaml
 
 # Format code
 fmt:
