@@ -61,10 +61,15 @@ kcl2xrd --input <kcl-file> --group <api-group> [--version <version>] [--output <
 - `-i, --input`: Input KCL schema file (required)
 - `-g, --group`: API group for the XRD (required)
 - `-v, --version`: API version for the XRD (default: `v1alpha1`)
+- `-s, --schema`: Name of the schema to convert (defaults to last schema in file)
 - `-o, --output`: Output XRD file (if not specified, outputs to stdout)
 - `--with-claims`: Generate XRD with claimNames (for creating claimable resources)
 - `--claim-kind`: Custom kind for the claim (defaults to schema name without 'X' prefix)
 - `--claim-plural`: Custom plural for the claim (auto-generated if not specified)
+- `--served`: Mark version as served (default: true)
+- `--referenceable`: Mark version as referenceable (default: true)
+- `--categories`: Categories for the XRD (comma-separated)
+- `--printer-columns`: Additional printer columns (format: `name:type:jsonPath:description`)
 
 ### Example
 
@@ -215,6 +220,17 @@ The converter supports the following KCL type mappings:
 - **Required fields**: `fieldName: Type`
 - **Optional fields**: `fieldName?: Type`
 - **Default values**: `fieldName?: Type = value`
+- **Field descriptions**: Use inline comments - `fieldName: Type  # Description`
+
+## Multi-Schema Files
+
+When a KCL file contains multiple schemas, use the `--schema` flag to specify which one to convert:
+
+```bash
+kcl2xrd -i file.k -g api.example.org --schema DynatraceAlerting
+```
+
+If not specified, the last schema in the file is used.
 
 ## Validation Annotations
 
@@ -252,6 +268,8 @@ schema ValidatedResource:
 | `@enum([...])` | any | Enumeration of allowed values | `@enum(["a", "b", "c"])` |
 | `@immutable` | any | Field cannot be changed after creation (x-kubernetes-immutable) | `@immutable` |
 | `@validate("rule", "msg")` | any | CEL validation expression | `@validate("self > 0", "Must be positive")` |
+| `@preserveUnknownFields` | object/array | Allow additional undefined properties (x-kubernetes-preserve-unknown-fields) | `@preserveUnknownFields` |
+| `@mapType("type")` | object | Kubernetes map merge strategy - atomic or granular (x-kubernetes-map-type) | `@mapType("atomic")` |
 
 ### CEL Validations
 
@@ -296,6 +314,7 @@ Check the `examples/` directory for more examples:
 - `examples/kcl/validated.k` - Schema with validation annotations
 - `examples/kcl/advanced-validated.k` - Schema with CEL validation rules
 - `examples/kcl/nested-schema.k` - Nested schema references
+- `examples/kcl/multi-schema.k` - Multiple schemas with schema selection
 - `examples/xrd/` - Generated XRD outputs
 
 ## Development
