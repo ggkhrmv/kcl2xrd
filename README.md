@@ -180,12 +180,85 @@ The converter supports the following KCL type mappings:
 - **Optional fields**: `fieldName?: Type`
 - **Default values**: `fieldName?: Type = value`
 
+## Validation Annotations
+
+The tool supports rich validation annotations using comments to generate OpenAPI validation constraints and Kubernetes-specific validations:
+
+### Basic Validations
+
+```kcl
+schema ValidatedResource:
+    # @pattern("^[a-z0-9-]+$")
+    # @minLength(3)
+    # @maxLength(63)
+    name: str
+    
+    # @minimum(0)
+    # @maximum(100)
+    age?: int
+    
+    # @enum(["active", "inactive", "pending"])
+    status?: str = "pending"
+    
+    # @immutable
+    resourceId: str
+```
+
+### Supported Validation Annotations
+
+| Annotation | Applies To | Description | Example |
+|------------|-----------|-------------|---------|
+| `@pattern("regex")` | string | Regex pattern validation | `@pattern("^[a-z]+$")` |
+| `@minLength(n)` | string | Minimum string length | `@minLength(3)` |
+| `@maxLength(n)` | string | Maximum string length | `@maxLength(255)` |
+| `@minimum(n)` | number | Minimum numeric value | `@minimum(0)` |
+| `@maximum(n)` | number | Maximum numeric value | `@maximum(100)` |
+| `@enum([...])` | any | Enumeration of allowed values | `@enum(["a", "b", "c"])` |
+| `@immutable` | any | Field cannot be changed after creation (x-kubernetes-immutable) | `@immutable` |
+| `@validate("rule", "msg")` | any | CEL validation expression | `@validate("self > 0", "Must be positive")` |
+
+### CEL Validations
+
+Use `@validate` for complex validation rules using Common Expression Language (CEL):
+
+```kcl
+schema DateRange:
+    # @pattern("^\\d{4}-\\d{2}-\\d{2}$")
+    startDate: str
+    
+    # @pattern("^\\d{4}-\\d{2}-\\d{2}$")
+    # @validate("self >= self.parent.startDate", "End date must be after start date")
+    endDate: str
+
+schema ScalableResource:
+    # @minimum(1)
+    # @validate("self <= self.parent.maxReplicas", "Min must be <= max")
+    minReplicas?: int = 1
+    
+    # @maximum(100)
+    # @validate("self >= self.parent.minReplicas", "Max must be >= min")
+    maxReplicas?: int = 10
+```
+
+Generated XRD includes:
+
+```yaml
+x-kubernetes-validations:
+  - rule: self >= self.parent.startDate
+    message: End date must be after start date
+```
+
+## Supported KCL Types
+
 ## Examples
 
 Check the `examples/` directory for more examples:
 
 - `examples/kcl/postgresql.k` - PostgreSQL database instance
 - `examples/kcl/k8scluster.k` - Kubernetes cluster with autoscaling
+- `examples/kcl/xpostgresql.k` - Composite resource with claims
+- `examples/kcl/validated.k` - Schema with validation annotations
+- `examples/kcl/advanced-validated.k` - Schema with CEL validation rules
 - `examples/xrd/` - Generated XRD outputs
 
 ## Development

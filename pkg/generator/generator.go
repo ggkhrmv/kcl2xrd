@@ -80,6 +80,21 @@ type PropertySchema struct {
 	Items       *PropertySchema           `yaml:"items,omitempty"`
 	Format      string                    `yaml:"format,omitempty"`
 	Default     interface{}               `yaml:"default,omitempty"`
+	// Validation fields
+	Pattern                string      `yaml:"pattern,omitempty"`
+	MinLength              *int        `yaml:"minLength,omitempty"`
+	MaxLength              *int        `yaml:"maxLength,omitempty"`
+	Minimum                *int        `yaml:"minimum,omitempty"`
+	Maximum                *int        `yaml:"maximum,omitempty"`
+	Enum                   []string    `yaml:"enum,omitempty"`
+	XKubernetesValidations []K8sValidation `yaml:"x-kubernetes-validations,omitempty"`
+	XKubernetesImmutable   *bool       `yaml:"x-kubernetes-immutable,omitempty"`
+}
+
+// K8sValidation represents Kubernetes CEL validation rules
+type K8sValidation struct {
+	Rule    string `yaml:"rule"`
+	Message string `yaml:"message,omitempty"`
 }
 
 // GenerateXRD generates a Crossplane XRD from a parsed KCL schema
@@ -249,6 +264,47 @@ func convertFieldToPropertySchema(field parser.Field) PropertySchema {
 			schema.Default = defaultValue
 		default:
 			schema.Default = defaultValue
+		}
+	}
+	
+	// Apply validation constraints
+	if field.Pattern != "" {
+		schema.Pattern = field.Pattern
+	}
+	
+	if field.MinLength != nil {
+		schema.MinLength = field.MinLength
+	}
+	
+	if field.MaxLength != nil {
+		schema.MaxLength = field.MaxLength
+	}
+	
+	if field.Minimum != nil {
+		schema.Minimum = field.Minimum
+	}
+	
+	if field.Maximum != nil {
+		schema.Maximum = field.Maximum
+	}
+	
+	if len(field.Enum) > 0 {
+		schema.Enum = field.Enum
+	}
+	
+	if field.Immutable {
+		immutable := true
+		schema.XKubernetesImmutable = &immutable
+	}
+	
+	// Apply CEL validations
+	if len(field.CELValidations) > 0 {
+		for _, celVal := range field.CELValidations {
+			k8sVal := K8sValidation{
+				Rule:    celVal.Rule,
+				Message: celVal.Message,
+			}
+			schema.XKubernetesValidations = append(schema.XKubernetesValidations, k8sVal)
 		}
 	}
 

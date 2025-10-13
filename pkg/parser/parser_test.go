@@ -107,3 +107,79 @@ import something
 		t.Error("Expected error for file with no schema, got nil")
 	}
 }
+
+func TestParseKCLFileWithValidations(t *testing.T) {
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.k")
+	
+	content := `schema TestSchema:
+    # @pattern("^[a-z]+$")
+    # @minLength(3)
+    # @maxLength(10)
+    name: str
+    
+    # @minimum(0)
+    # @maximum(100)
+    age?: int
+    
+    # @enum(["active", "inactive"])
+    status?: str
+    
+    # @immutable
+    id: str
+    
+    # @validate("self > 0", "Must be positive")
+    count?: int
+`
+	
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	
+	schema, err := ParseKCLFile(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFile failed: %v", err)
+	}
+	
+	// Check name field validations
+	nameField := schema.Fields[0]
+	if nameField.Pattern != "^[a-z]+$" {
+		t.Errorf("Expected pattern '^[a-z]+$', got '%s'", nameField.Pattern)
+	}
+	if nameField.MinLength == nil || *nameField.MinLength != 3 {
+		t.Error("Expected minLength of 3")
+	}
+	if nameField.MaxLength == nil || *nameField.MaxLength != 10 {
+		t.Error("Expected maxLength of 10")
+	}
+	
+	// Check age field validations
+	ageField := schema.Fields[1]
+	if ageField.Minimum == nil || *ageField.Minimum != 0 {
+		t.Error("Expected minimum of 0")
+	}
+	if ageField.Maximum == nil || *ageField.Maximum != 100 {
+		t.Error("Expected maximum of 100")
+	}
+	
+	// Check status field enum
+	statusField := schema.Fields[2]
+	if len(statusField.Enum) != 2 {
+		t.Errorf("Expected 2 enum values, got %d", len(statusField.Enum))
+	}
+	
+	// Check id field immutability
+	idField := schema.Fields[3]
+	if !idField.Immutable {
+		t.Error("Expected id field to be immutable")
+	}
+	
+	// Check count field CEL validation
+	countField := schema.Fields[4]
+	if len(countField.CELValidations) != 1 {
+		t.Errorf("Expected 1 CEL validation, got %d", len(countField.CELValidations))
+	}
+	if countField.CELValidations[0].Rule != "self > 0" {
+		t.Errorf("Expected CEL rule 'self > 0', got '%s'", countField.CELValidations[0].Rule)
+	}
+}
