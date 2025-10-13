@@ -11,10 +11,10 @@ import (
 
 // XRD represents a Crossplane Composite Resource Definition
 type XRD struct {
-	APIVersion string      `yaml:"apiVersion"`
-	Kind       string      `yaml:"kind"`
-	Metadata   Metadata    `yaml:"metadata"`
-	Spec       XRDSpec     `yaml:"spec"`
+	APIVersion string   `yaml:"apiVersion"`
+	Kind       string   `yaml:"kind"`
+	Metadata   Metadata `yaml:"metadata"`
+	Spec       XRDSpec  `yaml:"spec"`
 }
 
 // Metadata represents the metadata section of an XRD
@@ -66,9 +66,9 @@ type VersionSchema struct {
 
 // OpenAPIV3Schema represents an OpenAPI v3 schema
 type OpenAPIV3Schema struct {
-	Type       string                     `yaml:"type"`
-	Properties map[string]PropertySchema  `yaml:"properties,omitempty"`
-	Required   []string                   `yaml:"required,omitempty"`
+	Type       string                    `yaml:"type"`
+	Properties map[string]PropertySchema `yaml:"properties,omitempty"`
+	Required   []string                  `yaml:"required,omitempty"`
 }
 
 // PropertySchema represents a property in an OpenAPI schema
@@ -221,7 +221,7 @@ func convertFieldToPropertySchema(field parser.Field) PropertySchema {
 	if field.Default != "" && field.Default != "Undefined" {
 		// Parse the default value to remove quotes if it's a string literal
 		defaultValue := strings.Trim(field.Default, `"`)
-		
+
 		// Try to convert to appropriate type
 		switch schema.Type {
 		case "integer":

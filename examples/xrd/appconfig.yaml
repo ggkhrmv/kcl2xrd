@@ -1,0 +1,38 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+    name: applicationconfigs.apps.example.org
+spec:
+    group: apps.example.org
+    names:
+        kind: ApplicationConfig
+        plural: applicationconfigs
+    versions:
+        - name: v1alpha1
+          served: true
+          referenceable: true
+          schema:
+            openAPIV3Schema:
+                type: object
+                properties:
+                    spec:
+                        type: object
+                        properties:
+                            parameters:
+                                type: object
+                                properties:
+                                    name:
+                                        type: string
+                                    networking:
+                                        type: object
+                                    replicas:
+                                        type: integer
+                                        default: 3
+                                    resources:
+                                        type: object
+                                required:
+                                    - name
+                        required:
+                            - parameters
+                required:
+                    - spec

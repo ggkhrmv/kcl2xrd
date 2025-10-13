@@ -2,6 +2,28 @@
 
 A tool to convert KCL (KCL Configuration Language) schemas to Crossplane Composite Resource Definitions (XRDs).
 
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/ggkhrmv/kcl2xrd.git
+cd kcl2xrd
+
+# Build the tool
+make build
+
+# Generate an XRD from a KCL schema
+./bin/kcl2xrd --input examples/kcl/postgresql.k \
+  --group database.example.org \
+  --output postgresql-xrd.yaml
+
+# Generate with claims support
+./bin/kcl2xrd --input examples/kcl/xpostgresql.k \
+  --group database.example.org \
+  --with-claims \
+  --output xpostgresql-xrd.yaml
+```
+
 ## Overview
 
 This project provides a converter that takes KCL schema files and generates Crossplane XRD YAML manifests. It's inspired by:
@@ -183,6 +205,37 @@ go build -o bin/kcl2xrd ./cmd/kcl2xrd
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## How This Fits in the Crossplane Ecosystem
+
+This tool bridges the gap between KCL schemas and Crossplane XRDs, complementing existing tools:
+
+```
+┌─────────────────┐
+│   Go Structs    │
+└────────┬────────┘
+         │ crossplane-tools
+         ▼
+    ┌────────┐
+    │  XRDs  │ ◄─── kcl2xrd (this tool)
+    └────┬───┘
+         │                    ┌──────────────┐
+         │                    │ KCL Schemas  │
+         │                    └──────▲───────┘
+         │                           │
+         │                           │ kcl-openapi
+         │                           │
+         │                    ┌──────┴───────┐
+         └───────────────────►│     CRDs     │
+                              └──────────────┘
+```
+
+**Workflow:**
+1. **CRDs → KCL**: Use `kcl-openapi` to convert Kubernetes CRDs to KCL schemas
+2. **KCL → XRDs**: Use `kcl2xrd` (this tool) to generate Crossplane XRDs from KCL schemas
+3. **Go → XRDs**: Use `crossplane-tools` to generate XRDs from Go structs
+
+This enables teams already using KCL for configuration management to easily create Crossplane composite resources.
 
 ## License
 

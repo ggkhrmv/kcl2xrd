@@ -10,13 +10,13 @@ import (
 )
 
 var (
-	inputFile       string
-	outputFile      string
-	group           string
-	version         string
-	withClaims      bool
-	claimKind       string
-	claimPlural     string
+	inputFile   string
+	outputFile  string
+	group       string
+	version     string
+	withClaims  bool
+	claimKind   string
+	claimPlural string
 )
 
 func main() {
