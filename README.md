@@ -51,27 +51,73 @@ This project provides a converter that takes KCL schema files and generates Cros
 
 ## Installation
 
+### Download Pre-built Binaries (Recommended)
+
+Download the latest release for your platform from the [GitHub Releases](https://github.com/ggkhrmv/kcl2xrd/releases) page.
+
+**Linux:**
+```bash
+# AMD64
+curl -LO https://github.com/ggkhrmv/kcl2xrd/releases/latest/download/kcl2xrd-linux-amd64
+chmod +x kcl2xrd-linux-amd64
+sudo mv kcl2xrd-linux-amd64 /usr/local/bin/kcl2xrd
+
+# ARM64
+curl -LO https://github.com/ggkhrmv/kcl2xrd/releases/latest/download/kcl2xrd-linux-arm64
+chmod +x kcl2xrd-linux-arm64
+sudo mv kcl2xrd-linux-arm64 /usr/local/bin/kcl2xrd
+```
+
+**macOS:**
+```bash
+# Intel Mac
+curl -LO https://github.com/ggkhrmv/kcl2xrd/releases/latest/download/kcl2xrd-darwin-amd64
+chmod +x kcl2xrd-darwin-amd64
+sudo mv kcl2xrd-darwin-amd64 /usr/local/bin/kcl2xrd
+
+# Apple Silicon (M1/M2)
+curl -LO https://github.com/ggkhrmv/kcl2xrd/releases/latest/download/kcl2xrd-darwin-arm64
+chmod +x kcl2xrd-darwin-arm64
+sudo mv kcl2xrd-darwin-arm64 /usr/local/bin/kcl2xrd
+```
+
+**Windows:**
+```powershell
+# Download from: https://github.com/ggkhrmv/kcl2xrd/releases/latest/download/kcl2xrd-windows-amd64.exe
+# Add to PATH or run directly
+```
+
 ### From Source
 
 ```bash
 git clone https://github.com/ggkhrmv/kcl2xrd.git
 cd kcl2xrd
-go build -o bin/kcl2xrd ./cmd/kcl2xrd
+make build
+# Binary will be at ./bin/kcl2xrd
 ```
 
-The binary will be available at `./bin/kcl2xrd`
+Or using Go directly:
+```bash
+go install github.com/ggkhrmv/kcl2xrd/cmd/kcl2xrd@latest
+```
 
 ## Usage
 
 ### Basic Usage
 
+**With metadata in KCL file (recommended):**
+```bash
+kcl2xrd --input <kcl-file> [--output <output-file>]
+```
+
+**With CLI flags:**
 ```bash
 kcl2xrd --input <kcl-file> --group <api-group> [--version <version>] [--output <output-file>]
 ```
 
 ### XRD Metadata in KCL Files
 
-You can define XRD metadata directly in your KCL file for automation. This eliminates the need to track which schema to use and what flags to pass:
+You can define XRD metadata directly in your KCL file for full automation. This eliminates the need to track which schema to use and what flags to pass:
 
 ```kcl
 # XRD Metadata - using unique __xrd_ prefix to avoid naming conflicts
@@ -133,17 +179,17 @@ This ensures only the marked schema and its nested references are converted, ign
 ### Options
 
 - `-i, --input`: Input KCL schema file (required)
-- `-g, --group`: API group for the XRD (required unless specified in KCL file via `__xrd_group`)
-- `-v, --version`: API version for the XRD (default: `v1alpha1`)
+- `-g, --group`: API group for the XRD (optional if specified in KCL file via `__xrd_group`)
+- `-v, --version`: API version for the XRD (default: `v1alpha1` or from `__xrd_version`)
 - `-s, --schema`: Name of the schema to convert (defaults to @xrd marked schema, `__xrd_kind`, or last schema in file)
 - `-o, --output`: Output XRD file (if not specified, outputs to stdout)
 - `--with-claims`: Generate XRD with claimNames (for creating claimable resources)
 - `--claim-kind`: Custom kind for the claim (defaults to schema name without 'X' prefix)
 - `--claim-plural`: Custom plural for the claim (auto-generated if not specified)
-- `--served`: Mark version as served (default: true)
-- `--referenceable`: Mark version as referenceable (default: true)
-- `--categories`: Categories for the XRD (comma-separated)
-- `--printer-columns`: Additional printer columns (format: `name:type:jsonPath:description`)
+- `--served`: Mark version as served (default: true or from `__xrd_served`)
+- `--referenceable`: Mark version as referenceable (default: true or from `__xrd_referenceable`)
+- `--categories`: Categories for the XRD (comma-separated, overrides `__xrd_categories`)
+- `--printer-columns`: Additional printer columns (format: `name:type:jsonPath:description`, overrides `__xrd_printer_columns`)
 
 ### Metadata Variables (in KCL file)
 

@@ -35,7 +35,7 @@ func main() {
 
 	rootCmd.Flags().StringVarP(&inputFile, "input", "i", "", "Input KCL schema file (required)")
 	rootCmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output XRD file (stdout if not specified)")
-	rootCmd.Flags().StringVarP(&group, "group", "g", "", "API group for the XRD (required unless specified in KCL file via __xrd_group)")
+	rootCmd.Flags().StringVarP(&group, "group", "g", "", "API group for the XRD (optional if specified in KCL file via __xrd_group)")
 	rootCmd.Flags().StringVarP(&version, "version", "v", "v1alpha1", "API version for the XRD")
 	rootCmd.Flags().StringVarP(&schemaName, "schema", "s", "", "Name of the schema to convert (defaults to @xrd marked schema, __xrd_kind, or last schema in file)")
 	rootCmd.Flags().BoolVar(&withClaims, "with-claims", false, "Generate XRD with claimNames")
@@ -121,7 +121,7 @@ func run(cmd *cobra.Command, args []string) error {
 	
 	// Validate that group is provided
 	if group == "" {
-		return fmt.Errorf("API group must be specified either via --group flag or 'group' variable in KCL file")
+		return fmt.Errorf("API group must be specified either via --group flag or '__xrd_group' variable in KCL file")
 	}
 
 	// Prepare generator options

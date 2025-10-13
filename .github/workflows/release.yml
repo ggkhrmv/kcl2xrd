@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Run tests
+        run: make test
+
+      - name: Build binaries
+        run: |
+          # Build for multiple platforms
+          GOOS=linux GOARCH=amd64 go build -o kcl2xrd-linux-amd64 ./cmd/kcl2xrd
+          GOOS=linux GOARCH=arm64 go build -o kcl2xrd-linux-arm64 ./cmd/kcl2xrd
+          GOOS=darwin GOARCH=amd64 go build -o kcl2xrd-darwin-amd64 ./cmd/kcl2xrd
+          GOOS=darwin GOARCH=arm64 go build -o kcl2xrd-darwin-arm64 ./cmd/kcl2xrd
+          GOOS=windows GOARCH=amd64 go build -o kcl2xrd-windows-amd64.exe ./cmd/kcl2xrd
+
+      - name: Create checksums
+        run: |
+          sha256sum kcl2xrd-* > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            kcl2xrd-linux-amd64
+            kcl2xrd-linux-arm64
+            kcl2xrd-darwin-amd64
+            kcl2xrd-darwin-arm64
+            kcl2xrd-windows-amd64.exe
+            checksums.txt
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
