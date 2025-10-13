@@ -12,7 +12,11 @@ cd kcl2xrd
 # Build the tool
 make build
 
-# Generate an XRD from a KCL schema
+# Generate an XRD from a KCL schema with metadata in the file
+./bin/kcl2xrd --input examples/kcl/dynatrace-with-metadata.k \
+  --output dynatrace-xrd.yaml
+
+# Or use CLI flags to override file metadata
 ./bin/kcl2xrd --input examples/kcl/postgresql.k \
   --group database.example.org \
   --output postgresql-xrd.yaml
@@ -32,10 +36,15 @@ This project provides a converter that takes KCL schema files and generates Cros
 
 ## Features
 
+- **XRD Metadata in KCL Files**: Define schema selection, API group, version, categories, and more directly in KCL
+- **Above-Field Comments**: Multi-line field descriptions for better documentation
 - Parse KCL schema files and extract type definitions
 - Generate valid Crossplane XRD YAML manifests
 - Support for various KCL types: `str`, `int`, `float`, `bool`, arrays, and objects
 - Handle optional fields, required fields, and default values
+- **Comprehensive validation support**: Regex patterns, enums, ranges, CEL expressions
+- **Nested schema support**: Automatically expand referenced schemas
+- **Kubernetes annotations**: Support for x-kubernetes-* fields
 - Customizable API group and version for generated XRDs
 
 ## Installation
@@ -52,16 +61,44 @@ The binary will be available at `./bin/kcl2xrd`
 
 ## Usage
 
+### Basic Usage
+
 ```bash
 kcl2xrd --input <kcl-file> --group <api-group> [--version <version>] [--output <output-file>]
 ```
 
+### XRD Metadata in KCL Files
+
+You can define XRD metadata directly in your KCL file for automation. This eliminates the need to track which schema to use and what flags to pass:
+
+```kcl
+# XRD Metadata - defines how the XRD should be generated
+xrKind = "DynatraceAlerting"
+xrVersion = "v1alpha1"
+group = "monitoring.crossplane.io"
+categories = ["monitoring", "alerting"]
+served = True
+referenceable = True
+
+schema DynatraceAlerting:
+    # Above-field comments become field descriptions
+    # They support multiple lines for better documentation
+    name: str
+```
+
+With metadata in the file, you only need:
+```bash
+kcl2xrd --input myschema.k --output myxrd.yaml
+```
+
+CLI flags still work and override file metadata when specified.
+
 ### Options
 
 - `-i, --input`: Input KCL schema file (required)
-- `-g, --group`: API group for the XRD (required)
+- `-g, --group`: API group for the XRD (required unless specified in KCL file)
 - `-v, --version`: API version for the XRD (default: `v1alpha1`)
-- `-s, --schema`: Name of the schema to convert (defaults to last schema in file)
+- `-s, --schema`: Name of the schema to convert (defaults to xrKind or last schema in file)
 - `-o, --output`: Output XRD file (if not specified, outputs to stdout)
 - `--with-claims`: Generate XRD with claimNames (for creating claimable resources)
 - `--claim-kind`: Custom kind for the claim (defaults to schema name without 'X' prefix)
@@ -70,6 +107,15 @@ kcl2xrd --input <kcl-file> --group <api-group> [--version <version>] [--output <
 - `--referenceable`: Mark version as referenceable (default: true)
 - `--categories`: Categories for the XRD (comma-separated)
 - `--printer-columns`: Additional printer columns (format: `name:type:jsonPath:description`)
+
+### Metadata Variables (in KCL file)
+
+- `xrKind = "SchemaName"`: Specifies which schema to convert
+- `xrVersion = "v1alpha1"`: API version for the XRD
+- `group = "api.example.org"`: API group for the XRD
+- `categories = ["cat1", "cat2"]`: Categories for the XRD
+- `served = True/False`: Whether version is served
+- `referenceable = True/False`: Whether version is referenceable
 
 ### Example
 
@@ -220,7 +266,18 @@ The converter supports the following KCL type mappings:
 - **Required fields**: `fieldName: Type`
 - **Optional fields**: `fieldName?: Type`
 - **Default values**: `fieldName?: Type = value`
-- **Field descriptions**: Use inline comments - `fieldName: Type  # Description`
+- **Field descriptions**: Use above-field comments for multi-line support
+
+Example:
+```kcl
+schema MyResource:
+    # This is the resource name
+    # It must be unique within the namespace
+    name: str
+    
+    # Optional field with default value
+    region?: str = "us-east-1"
+```
 
 ## Multi-Schema Files
 
@@ -270,6 +327,10 @@ schema ValidatedResource:
 | `@validate("rule", "msg")` | any | CEL validation expression | `@validate("self > 0", "Must be positive")` |
 | `@preserveUnknownFields` | object/array | Allow additional undefined properties (x-kubernetes-preserve-unknown-fields) | `@preserveUnknownFields` |
 | `@mapType("type")` | object | Kubernetes map merge strategy - atomic or granular (x-kubernetes-map-type) | `@mapType("atomic")` |
+| `@listType("type")` | array | Kubernetes list type - atomic, set, or map (x-kubernetes-list-type) | `@listType("atomic")` |
+| `@listMapKeys(["key"])` | array | Keys for map-type lists (x-kubernetes-list-map-keys) | `@listMapKeys(["name"])` |
+
+For more information on Kubernetes CRD validation fields, see the [Kubernetes documentation](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/).
 
 ### CEL Validations
 
@@ -315,6 +376,7 @@ Check the `examples/` directory for more examples:
 - `examples/kcl/advanced-validated.k` - Schema with CEL validation rules
 - `examples/kcl/nested-schema.k` - Nested schema references
 - `examples/kcl/multi-schema.k` - Multiple schemas with schema selection
+- `examples/kcl/dynatrace-with-metadata.k` - XRD metadata defined in KCL file
 - `examples/xrd/` - Generated XRD outputs
 
 ## Development
