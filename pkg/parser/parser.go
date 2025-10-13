@@ -38,6 +38,9 @@ type Field struct {
 	Enum        []string // enumeration of allowed values
 	Immutable   bool   // x-kubernetes-immutable marker
 	CELValidations []CELValidation // CEL validation rules
+	// Kubernetes-specific annotations
+	PreserveUnknownFields bool   // x-kubernetes-preserve-unknown-fields
+	MapType               string // x-kubernetes-map-type
 }
 
 // CELValidation represents a CEL validation rule
@@ -86,6 +89,8 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	enumRegex := regexp.MustCompile(`@enum\s*\(\s*\[(.*?)\]\s*\)`)
 	immutableRegex := regexp.MustCompile(`@immutable`)
 	celValidationRegex := regexp.MustCompile(`@validate\s*\(\s*['"](.*?)['"]\s*(?:,\s*['"](.*?)['"]\s*)?\)`)
+	preserveUnknownFieldsRegex := regexp.MustCompile(`@preserveUnknownFields`)
+	mapTypeRegex := regexp.MustCompile(`@mapType\s*\(\s*['"](.*?)['"]\s*\)`)
 	
 	var pendingAnnotations []string
 
@@ -159,6 +164,25 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 					parts := strings.Split(fieldType, ",")
 					fieldType = strings.TrimSpace(parts[0])
 				}
+				
+				// Extract inline comment as description (before regex match to avoid conflict)
+				inlineDescription := ""
+				if commentIndex := strings.Index(line, "#"); commentIndex > 0 {
+					// Check if this is after the field definition
+					beforeComment := line[:commentIndex]
+					if strings.Contains(beforeComment, ":") {
+						inlineDescription = strings.TrimSpace(line[commentIndex+1:])
+						// Also remove comment from default value if present
+						if defaultValue != "" && strings.Contains(defaultValue, "#") {
+							parts := strings.SplitN(defaultValue, "#", 2)
+							defaultValue = strings.TrimSpace(parts[0])
+							// If description wasn't already set, use comment from default line
+							if inlineDescription == "" {
+								inlineDescription = strings.TrimSpace(parts[1])
+							}
+						}
+					}
+				}
 
 				field := Field{
 					Name:     fieldName,
@@ -167,10 +191,16 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 					Default:  defaultValue,
 				}
 				
+				// Set description from inline comment if present
+				if inlineDescription != "" {
+					field.Description = inlineDescription
+				}
+				
 				// Apply validation annotations from pending comments
 				applyValidationAnnotations(&field, pendingAnnotations, 
 					patternRegex, minLengthRegex, maxLengthRegex, 
-					minimumRegex, maximumRegex, enumRegex, immutableRegex, celValidationRegex)
+					minimumRegex, maximumRegex, enumRegex, immutableRegex, celValidationRegex,
+					preserveUnknownFieldsRegex, mapTypeRegex)
 				pendingAnnotations = nil
 				
 				currentSchema.Fields = append(currentSchema.Fields, field)
@@ -201,7 +231,8 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 
 // applyValidationAnnotations applies validation annotations from comments to a field
 func applyValidationAnnotations(field *Field, annotations []string, 
-	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, enumRegex, immutableRegex, celValidationRegex *regexp.Regexp) {
+	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, enumRegex, immutableRegex, celValidationRegex,
+	preserveUnknownFieldsRegex, mapTypeRegex *regexp.Regexp) {
 	
 	for _, annotation := range annotations {
 		// Check for pattern
@@ -266,6 +297,16 @@ func applyValidationAnnotations(field *Field, annotations []string,
 				Rule:    rule,
 				Message: message,
 			})
+		}
+		
+		// Check for preserveUnknownFields
+		if preserveUnknownFieldsRegex.MatchString(annotation) {
+			field.PreserveUnknownFields = true
+		}
+		
+		// Check for mapType
+		if matches := mapTypeRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+			field.MapType = matches[1]
 		}
 	}
 }

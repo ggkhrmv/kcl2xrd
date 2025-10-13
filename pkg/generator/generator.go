@@ -22,12 +22,22 @@ type Metadata struct {
 	Name string `yaml:"name"`
 }
 
+// PrinterColumn represents an additional printer column
+type PrinterColumn struct {
+	Name        string `yaml:"name"`
+	Type        string `yaml:"type"`
+	JSONPath    string `yaml:"jsonPath"`
+	Description string `yaml:"description,omitempty"`
+	Priority    int    `yaml:"priority,omitempty"`
+}
+
 // XRDSpec represents the spec section of an XRD
 type XRDSpec struct {
 	Group      string      `yaml:"group"`
 	Names      Names       `yaml:"names"`
 	ClaimNames *ClaimNames `yaml:"claimNames,omitempty"`
 	Versions   []Version   `yaml:"versions"`
+	Categories []string    `yaml:"categories,omitempty"`
 }
 
 // Names represents the names section of an XRD spec
@@ -44,19 +54,24 @@ type ClaimNames struct {
 
 // XRDOptions contains options for generating an XRD
 type XRDOptions struct {
-	Group       string
-	Version     string
-	WithClaims  bool
-	ClaimKind   string
-	ClaimPlural string
+	Group          string
+	Version        string
+	WithClaims     bool
+	ClaimKind      string
+	ClaimPlural    string
+	Served         bool
+	Referenceable  bool
+	Categories     []string
+	PrinterColumns []PrinterColumn
 }
 
 // Version represents a version in an XRD spec
 type Version struct {
-	Name          string        `yaml:"name"`
-	Served        bool          `yaml:"served"`
-	Referenceable bool          `yaml:"referenceable"`
-	Schema        VersionSchema `yaml:"schema"`
+	Name                   string          `yaml:"name"`
+	Served                 bool            `yaml:"served"`
+	Referenceable          bool            `yaml:"referenceable"`
+	Schema                 VersionSchema   `yaml:"schema"`
+	AdditionalPrinterColumns []PrinterColumn `yaml:"additionalPrinterColumns,omitempty"`
 }
 
 // VersionSchema represents the schema section of a version
@@ -81,14 +96,16 @@ type PropertySchema struct {
 	Format      string                    `yaml:"format,omitempty"`
 	Default     interface{}               `yaml:"default,omitempty"`
 	// Validation fields
-	Pattern                string      `yaml:"pattern,omitempty"`
-	MinLength              *int        `yaml:"minLength,omitempty"`
-	MaxLength              *int        `yaml:"maxLength,omitempty"`
-	Minimum                *int        `yaml:"minimum,omitempty"`
-	Maximum                *int        `yaml:"maximum,omitempty"`
-	Enum                   []string    `yaml:"enum,omitempty"`
-	XKubernetesValidations []K8sValidation `yaml:"x-kubernetes-validations,omitempty"`
-	XKubernetesImmutable   *bool       `yaml:"x-kubernetes-immutable,omitempty"`
+	Pattern                    string          `yaml:"pattern,omitempty"`
+	MinLength                  *int            `yaml:"minLength,omitempty"`
+	MaxLength                  *int            `yaml:"maxLength,omitempty"`
+	Minimum                    *int            `yaml:"minimum,omitempty"`
+	Maximum                    *int            `yaml:"maximum,omitempty"`
+	Enum                       []string        `yaml:"enum,omitempty"`
+	XKubernetesValidations     []K8sValidation `yaml:"x-kubernetes-validations,omitempty"`
+	XKubernetesImmutable       *bool           `yaml:"x-kubernetes-immutable,omitempty"`
+	XKubernetesPreserveUnknownFields *bool     `yaml:"x-kubernetes-preserve-unknown-fields,omitempty"`
+	XKubernetesMapType         string          `yaml:"x-kubernetes-map-type,omitempty"`
 }
 
 // K8sValidation represents Kubernetes CEL validation rules
@@ -131,9 +148,10 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 			},
 			Versions: []Version{
 				{
-					Name:          opts.Version,
-					Served:        true,
-					Referenceable: true,
+					Name:                     opts.Version,
+					Served:                   opts.Served,
+					Referenceable:            opts.Referenceable,
+					AdditionalPrinterColumns: opts.PrinterColumns,
 					Schema: VersionSchema{
 						OpenAPIV3Schema: OpenAPIV3Schema{
 							Type:       "object",
@@ -142,6 +160,7 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 					},
 				},
 			},
+			Categories: opts.Categories,
 		},
 	}
 
@@ -341,6 +360,15 @@ func applyFieldValidationsAndDefaults(field parser.Field, schema *PropertySchema
 	if field.Immutable {
 		immutable := true
 		schema.XKubernetesImmutable = &immutable
+	}
+	
+	if field.PreserveUnknownFields {
+		preserve := true
+		schema.XKubernetesPreserveUnknownFields = &preserve
+	}
+	
+	if field.MapType != "" {
+		schema.XKubernetesMapType = field.MapType
 	}
 	
 	// Apply CEL validations
