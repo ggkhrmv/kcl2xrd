@@ -25,11 +25,10 @@ install:
 # Generate example XRDs
 examples: build
 	./bin/kcl2xrd --input examples/kcl/postgresql.k --group database.example.org --output examples/xrd/postgresql.yaml
-	./bin/kcl2xrd --input examples/kcl/k8scluster.k --group platform.example.org --version v1beta1 --output examples/xrd/k8scluster.yaml
-	./bin/kcl2xrd --input examples/kcl/xpostgresql.k --group database.example.org --with-claims --output examples/xrd/xpostgresql.yaml
 	./bin/kcl2xrd --input examples/kcl/validated.k --group example.org --output examples/xrd/validated.yaml
-	./bin/kcl2xrd --input examples/kcl/advanced-validated.k --group example.org --output examples/xrd/advanced-validated.yaml
 	./bin/kcl2xrd --input examples/kcl/nested-schema.k --group storage.example.org --output examples/xrd/nested-schema.yaml
+	./bin/kcl2xrd --input examples/kcl/dynatrace-with-metadata.k --output examples/xrd/dynatrace-with-metadata.yaml
+	./bin/kcl2xrd --input examples/kcl/preserve-unknown-fields.k --group config.example.org --output examples/xrd/preserve-unknown-fields.yaml
 
 # Format code
 fmt:

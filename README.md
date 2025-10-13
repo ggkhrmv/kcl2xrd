@@ -21,11 +21,13 @@ make build
   --group database.example.org \
   --output postgresql-xrd.yaml
 
-# Generate with claims support
-./bin/kcl2xrd --input examples/kcl/xpostgresql.k \
+# Generate with claims support (using CLI flags)
+./bin/kcl2xrd --input examples/kcl/postgresql.k \
   --group database.example.org \
   --with-claims \
-  --output xpostgresql-xrd.yaml
+  --claim-kind PostgreSQLClaim \
+  --claim-plural postgresqlclaims \
+  --output postgresql-claim-xrd.yaml
 ```
 
 ## Overview
@@ -447,19 +449,15 @@ x-kubernetes-validations:
 
 ## Examples
 
-Check the `examples/` directory for more examples:
+Check the `examples/` directory for comprehensive examples covering all features:
 
-- `examples/kcl/postgresql.k` - PostgreSQL database instance
-- `examples/kcl/k8scluster.k` - Kubernetes cluster with autoscaling
-- `examples/kcl/xpostgresql.k` - Composite resource with claims
-- `examples/kcl/validated.k` - Schema with validation annotations
-- `examples/kcl/advanced-validated.k` - Schema with CEL validation rules
-- `examples/kcl/nested-schema.k` - Nested schema references
-- `examples/kcl/multi-schema.k` - Multiple schemas with schema selection
-- `examples/kcl/dynatrace-with-metadata.k` - XRD metadata defined in KCL file
-- `examples/kcl/advanced-xrd-metadata.k` - @xrd annotation and printer columns in code
-- `examples/kcl/preserve-unknown-fields.k` - Using {any:any} for arbitrary properties
-- `examples/xrd/` - Generated XRD outputs
+1. **`examples/kcl/postgresql.k`** - Basic schema with required/optional fields and defaults
+2. **`examples/kcl/validated.k`** - Validation features (patterns, enums, constraints, immutability, CEL)
+3. **`examples/kcl/nested-schema.k`** - Nested schema expansion with type references
+4. **`examples/kcl/dynatrace-with-metadata.k`** - Full in-file metadata (@xrd annotation, printer columns, categories)
+5. **`examples/kcl/preserve-unknown-fields.k`** - Using {any:any} syntax for arbitrary properties
+
+Each example demonstrates multiple features. Generated XRDs are in `examples/xrd/`.
 
 ## Development
 
