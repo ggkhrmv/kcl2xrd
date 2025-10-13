@@ -14,6 +14,7 @@ type Schema struct {
 	Name        string
 	Description string
 	Fields      []Field
+	IsXRD       bool // marked with @xrd annotation
 }
 
 // ParseResult contains all schemas parsed from a file
@@ -103,13 +104,14 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	schemaRegex := regexp.MustCompile(`^\s*schema\s+(\w+)\s*:?\s*$`)
 	fieldRegex := regexp.MustCompile(`^\s*(\w+)\s*(\?)?:\s*(.+?)(?:\s*=\s*(.+))?\s*$`)
 	
-	// Metadata variable patterns
-	xrKindRegex := regexp.MustCompile(`^\s*xrKind\s*=\s*['"](.*?)['"]\s*$`)
-	xrVersionRegex := regexp.MustCompile(`^\s*xrVersion\s*=\s*['"](.*?)['"]\s*$`)
-	groupRegex := regexp.MustCompile(`^\s*group\s*=\s*['"](.*?)['"]\s*$`)
-	categoriesRegex := regexp.MustCompile(`^\s*categories\s*=\s*\[(.*?)\]\s*$`)
-	servedRegex := regexp.MustCompile(`^\s*served\s*=\s*(true|false|True|False)\s*$`)
-	referenceableRegex := regexp.MustCompile(`^\s*referenceable\s*=\s*(true|false|True|False)\s*$`)
+	// Metadata variable patterns (using __xrd_ prefix for unique naming)
+	xrKindRegex := regexp.MustCompile(`^\s*__xrd_kind\s*=\s*['"](.*?)['"]\s*$`)
+	xrVersionRegex := regexp.MustCompile(`^\s*__xrd_version\s*=\s*['"](.*?)['"]\s*$`)
+	groupRegex := regexp.MustCompile(`^\s*__xrd_group\s*=\s*['"](.*?)['"]\s*$`)
+	categoriesRegex := regexp.MustCompile(`^\s*__xrd_categories\s*=\s*\[(.*?)\]\s*$`)
+	servedRegex := regexp.MustCompile(`^\s*__xrd_served\s*=\s*(true|false|True|False)\s*$`)
+	referenceableRegex := regexp.MustCompile(`^\s*__xrd_referenceable\s*=\s*(true|false|True|False)\s*$`)
+	printerColumnsRegex := regexp.MustCompile(`^\s*__xrd_printer_columns\s*=\s*\[(.*?)\]\s*$`)
 	
 	// Validation annotation patterns
 	patternRegex := regexp.MustCompile(`@pattern\s*\(\s*['"](.*?)['"]\s*\)`)
@@ -124,6 +126,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	mapTypeRegex := regexp.MustCompile(`@mapType\s*\(\s*['"](.*?)['"]\s*\)`)
 	listTypeRegex := regexp.MustCompile(`@listType\s*\(\s*['"](.*?)['"]\s*\)`)
 	listMapKeysRegex := regexp.MustCompile(`@listMapKeys\s*\(\s*\[(.*?)\]\s*\)`)
+	xrdAnnotationRegex := regexp.MustCompile(`@xrd`)
 	
 	var pendingAnnotations []string
 	var pendingComments []string
@@ -174,6 +177,26 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 			if matches := referenceableRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
 				referenceable := strings.ToLower(matches[1]) == "true"
 				metadata.Referenceable = &referenceable
+				continue
+			}
+			if matches := printerColumnsRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
+				columnsStr := matches[1]
+				// Parse printer columns format: "Name:string:.metadata.name:Description", "Age:integer:.status.age:Age in days"
+				columnStrs := splitPrinterColumns(columnsStr)
+				for _, colStr := range columnStrs {
+					parts := strings.Split(colStr, ":")
+					if len(parts) >= 3 {
+						pc := PrinterColumn{
+							Name:     parts[0],
+							Type:     parts[1],
+							JSONPath: parts[2],
+						}
+						if len(parts) >= 4 {
+							pc.Description = parts[3]
+						}
+						metadata.PrinterColumns = append(metadata.PrinterColumns, pc)
+					}
+				}
 				continue
 			}
 		}
@@ -227,6 +250,17 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				Name:   matches[1],
 				Fields: []Field{},
 			}
+			
+			// Check if this schema is marked with @xrd annotation
+			for _, annotation := range pendingAnnotations {
+				if xrdAnnotationRegex.MatchString(annotation) {
+					currentSchema.IsXRD = true
+					break
+				}
+			}
+			pendingAnnotations = nil
+			pendingComments = nil
+			
 			inSchema = true
 			continue
 		}
@@ -398,4 +432,48 @@ func applyValidationAnnotations(field *Field, annotations []string,
 			field.ListMapKeys = keys
 		}
 	}
+}
+
+// splitPrinterColumns splits printer columns string respecting quoted strings
+func splitPrinterColumns(s string) []string {
+	var result []string
+	var current strings.Builder
+	inQuote := false
+	quoteChar := rune(0)
+	
+	for i, ch := range s {
+		if (ch == '"' || ch == '\'') && (i == 0 || s[i-1] != '\\') {
+			if inQuote {
+				if ch == quoteChar {
+					inQuote = false
+					quoteChar = 0
+				}
+			} else {
+				inQuote = true
+				quoteChar = ch
+			}
+			continue
+		}
+		
+		if ch == ',' && !inQuote {
+			trimmed := strings.TrimSpace(current.String())
+			trimmed = strings.Trim(trimmed, `"'`)
+			if trimmed != "" {
+				result = append(result, trimmed)
+			}
+			current.Reset()
+			continue
+		}
+		
+		current.WriteRune(ch)
+	}
+	
+	// Add last item
+	trimmed := strings.TrimSpace(current.String())
+	trimmed = strings.Trim(trimmed, `"'`)
+	if trimmed != "" {
+		result = append(result, trimmed)
+	}
+	
+	return result
 }

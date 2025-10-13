@@ -35,9 +35,9 @@ func main() {
 
 	rootCmd.Flags().StringVarP(&inputFile, "input", "i", "", "Input KCL schema file (required)")
 	rootCmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output XRD file (stdout if not specified)")
-	rootCmd.Flags().StringVarP(&group, "group", "g", "", "API group for the XRD (required unless specified in KCL file)")
+	rootCmd.Flags().StringVarP(&group, "group", "g", "", "API group for the XRD (required unless specified in KCL file via __xrd_group)")
 	rootCmd.Flags().StringVarP(&version, "version", "v", "v1alpha1", "API version for the XRD")
-	rootCmd.Flags().StringVarP(&schemaName, "schema", "s", "", "Name of the schema to convert (defaults to xrKind or last schema in file)")
+	rootCmd.Flags().StringVarP(&schemaName, "schema", "s", "", "Name of the schema to convert (defaults to @xrd marked schema, __xrd_kind, or last schema in file)")
 	rootCmd.Flags().BoolVar(&withClaims, "with-claims", false, "Generate XRD with claimNames")
 	rootCmd.Flags().StringVar(&claimKind, "claim-kind", "", "Kind for the claim (defaults to schema name without 'X' prefix)")
 	rootCmd.Flags().StringVar(&claimPlural, "claim-plural", "", "Plural for the claim (auto-generated if not specified)")
@@ -62,20 +62,36 @@ func run(cmd *cobra.Command, args []string) error {
 	// Select schema to convert
 	var selectedSchema *parser.Schema
 	if schemaName != "" {
-		// User specified a schema name
+		// User specified a schema name via CLI
 		if result.Schemas[schemaName] == nil {
 			return fmt.Errorf("schema '%s' not found in file. Available schemas: %v", schemaName, getSchemaNames(result.Schemas))
 		}
 		selectedSchema = result.Schemas[schemaName]
-	} else if result.Metadata != nil && result.Metadata.XRKind != "" {
-		// Use XRKind from metadata if specified
-		if result.Schemas[result.Metadata.XRKind] == nil {
-			return fmt.Errorf("schema '%s' (from xrKind) not found in file. Available schemas: %v", result.Metadata.XRKind, getSchemaNames(result.Schemas))
-		}
-		selectedSchema = result.Schemas[result.Metadata.XRKind]
 	} else {
-		// Use the primary (last) schema
-		selectedSchema = result.Primary
+		// Check if any schema is marked with @xrd annotation
+		var xrdSchema *parser.Schema
+		for _, schema := range result.Schemas {
+			if schema.IsXRD {
+				if xrdSchema != nil {
+					return fmt.Errorf("multiple schemas marked with @xrd annotation: '%s' and '%s'. Only one schema should be marked.", xrdSchema.Name, schema.Name)
+				}
+				xrdSchema = schema
+			}
+		}
+		
+		if xrdSchema != nil {
+			// Use the schema marked with @xrd
+			selectedSchema = xrdSchema
+		} else if result.Metadata != nil && result.Metadata.XRKind != "" {
+			// Use __xrd_kind from metadata if specified
+			if result.Schemas[result.Metadata.XRKind] == nil {
+				return fmt.Errorf("schema '%s' (from __xrd_kind) not found in file. Available schemas: %v", result.Metadata.XRKind, getSchemaNames(result.Schemas))
+			}
+			selectedSchema = result.Schemas[result.Metadata.XRKind]
+		} else {
+			// Use the primary (last) schema
+			selectedSchema = result.Primary
+		}
 	}
 
 	// Apply metadata from KCL file if present, CLI flags override

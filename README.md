@@ -72,18 +72,26 @@ kcl2xrd --input <kcl-file> --group <api-group> [--version <version>] [--output <
 You can define XRD metadata directly in your KCL file for automation. This eliminates the need to track which schema to use and what flags to pass:
 
 ```kcl
-# XRD Metadata - defines how the XRD should be generated
-xrKind = "DynatraceAlerting"
-xrVersion = "v1alpha1"
-group = "monitoring.crossplane.io"
-categories = ["monitoring", "alerting"]
-served = True
-referenceable = True
+# XRD Metadata - using unique __xrd_ prefix to avoid naming conflicts
+__xrd_kind = "DynatraceAlerting"
+__xrd_version = "v1alpha1"
+__xrd_group = "monitoring.crossplane.io"
+__xrd_categories = ["monitoring", "alerting"]
+__xrd_served = True
+__xrd_referenceable = True
+__xrd_printer_columns = ["Status:string:.status.conditions[?(@.type=='Ready')].status:Ready Status", "Age:date:.metadata.creationTimestamp:Age"]
 
+# Mark the parent schema with @xrd annotation
+# @xrd
 schema DynatraceAlerting:
     # Above-field comments become field descriptions
     # They support multiple lines for better documentation
     name: str
+    
+schema HelperSchema:
+    # This schema won't be converted on its own
+    # unless referenced by the @xrd marked schema
+    field: str
 ```
 
 With metadata in the file, you only need:
@@ -93,12 +101,39 @@ kcl2xrd --input myschema.k --output myxrd.yaml
 
 CLI flags still work and override file metadata when specified.
 
+**Available Metadata Variables:**
+- `__xrd_kind` - Name of the schema to convert (alternative to @xrd annotation)
+- `__xrd_version` - API version (default: v1alpha1)
+- `__xrd_group` - API group for the XRD
+- `__xrd_categories` - List of categories
+- `__xrd_served` - Whether version is served (True/False)
+- `__xrd_referenceable` - Whether version is referenceable (True/False)
+- `__xrd_printer_columns` - List of printer columns in format "Name:Type:JSONPath:Description"
+
+**@xrd Annotation:**
+Use the `@xrd` annotation to mark which schema should be the parent/root schema for XRD generation:
+
+```kcl
+# @xrd
+schema MyMainSchema:
+    nested: HelperSchema
+    
+schema HelperSchema:
+    field: str
+    
+schema UnrelatedSchema:
+    # This won't be included since it's not referenced by MyMainSchema
+    other: str
+```
+
+This ensures only the marked schema and its nested references are converted, ignoring any other schemas or KCL code in the file.
+
 ### Options
 
 - `-i, --input`: Input KCL schema file (required)
-- `-g, --group`: API group for the XRD (required unless specified in KCL file)
+- `-g, --group`: API group for the XRD (required unless specified in KCL file via `__xrd_group`)
 - `-v, --version`: API version for the XRD (default: `v1alpha1`)
-- `-s, --schema`: Name of the schema to convert (defaults to xrKind or last schema in file)
+- `-s, --schema`: Name of the schema to convert (defaults to @xrd marked schema, `__xrd_kind`, or last schema in file)
 - `-o, --output`: Output XRD file (if not specified, outputs to stdout)
 - `--with-claims`: Generate XRD with claimNames (for creating claimable resources)
 - `--claim-kind`: Custom kind for the claim (defaults to schema name without 'X' prefix)
@@ -110,12 +145,15 @@ CLI flags still work and override file metadata when specified.
 
 ### Metadata Variables (in KCL file)
 
-- `xrKind = "SchemaName"`: Specifies which schema to convert
-- `xrVersion = "v1alpha1"`: API version for the XRD
-- `group = "api.example.org"`: API group for the XRD
-- `categories = ["cat1", "cat2"]`: Categories for the XRD
-- `served = True/False`: Whether version is served
-- `referenceable = True/False`: Whether version is referenceable
+All metadata variables use the `__xrd_` prefix to avoid naming conflicts with KCL code:
+
+- `__xrd_kind = "SchemaName"`: Specifies which schema to convert
+- `__xrd_version = "v1alpha1"`: API version for the XRD
+- `__xrd_group = "api.example.org"`: API group for the XRD
+- `__xrd_categories = ["cat1", "cat2"]`: Categories for the XRD
+- `__xrd_served = True/False`: Whether version is served
+- `__xrd_referenceable = True/False`: Whether version is referenceable
+- `__xrd_printer_columns = ["Name:Type:JSONPath:Description"]`: Additional printer columns
 
 ### Example
 
