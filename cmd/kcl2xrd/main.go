@@ -45,7 +45,11 @@ func main() {
 	rootCmd.Flags().BoolVar(&referenceable, "referenceable", true, "Mark version as referenceable")
 	rootCmd.Flags().StringSliceVar(&categories, "categories", nil, "Categories for the XRD (comma-separated)")
 	rootCmd.Flags().StringSliceVar(&printerColumns, "printer-columns", nil, "Additional printer columns (format: name:type:jsonPath:description)")
-	rootCmd.MarkFlagRequired("input")
+	
+	if err := rootCmd.MarkFlagRequired("input"); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
