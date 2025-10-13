@@ -18,8 +18,28 @@ type Schema struct {
 
 // ParseResult contains all schemas parsed from a file
 type ParseResult struct {
-	Schemas map[string]*Schema // map of schema name to schema
-	Primary *Schema            // the last/main schema in the file
+	Schemas  map[string]*Schema // map of schema name to schema
+	Primary  *Schema            // the last/main schema in the file
+	Metadata *XRDMetadata       // XRD metadata from KCL variables
+}
+
+// XRDMetadata contains metadata for XRD generation parsed from KCL variables
+type XRDMetadata struct {
+	XRKind         string
+	XRVersion      string
+	Group          string
+	Categories     []string
+	PrinterColumns []PrinterColumn
+	Served         *bool
+	Referenceable  *bool
+}
+
+// PrinterColumn represents an additional printer column
+type PrinterColumn struct {
+	Name        string
+	Type        string
+	JSONPath    string
+	Description string
 }
 
 // Field represents a field in a KCL schema
@@ -41,6 +61,8 @@ type Field struct {
 	// Kubernetes-specific annotations
 	PreserveUnknownFields bool   // x-kubernetes-preserve-unknown-fields
 	MapType               string // x-kubernetes-map-type
+	ListType              string // x-kubernetes-list-type
+	ListMapKeys           []string // x-kubernetes-list-map-keys
 }
 
 // CELValidation represents a CEL validation rule
@@ -76,9 +98,18 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	
 	schemas := make(map[string]*Schema)
 	var primarySchema *Schema
+	metadata := &XRDMetadata{}
 
 	schemaRegex := regexp.MustCompile(`^\s*schema\s+(\w+)\s*:?\s*$`)
 	fieldRegex := regexp.MustCompile(`^\s*(\w+)\s*(\?)?:\s*(.+?)(?:\s*=\s*(.+))?\s*$`)
+	
+	// Metadata variable patterns
+	xrKindRegex := regexp.MustCompile(`^\s*xrKind\s*=\s*['"](.*?)['"]\s*$`)
+	xrVersionRegex := regexp.MustCompile(`^\s*xrVersion\s*=\s*['"](.*?)['"]\s*$`)
+	groupRegex := regexp.MustCompile(`^\s*group\s*=\s*['"](.*?)['"]\s*$`)
+	categoriesRegex := regexp.MustCompile(`^\s*categories\s*=\s*\[(.*?)\]\s*$`)
+	servedRegex := regexp.MustCompile(`^\s*served\s*=\s*(true|false|True|False)\s*$`)
+	referenceableRegex := regexp.MustCompile(`^\s*referenceable\s*=\s*(true|false|True|False)\s*$`)
 	
 	// Validation annotation patterns
 	patternRegex := regexp.MustCompile(`@pattern\s*\(\s*['"](.*?)['"]\s*\)`)
@@ -91,22 +122,74 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	celValidationRegex := regexp.MustCompile(`@validate\s*\(\s*['"](.*?)['"]\s*(?:,\s*['"](.*?)['"]\s*)?\)`)
 	preserveUnknownFieldsRegex := regexp.MustCompile(`@preserveUnknownFields`)
 	mapTypeRegex := regexp.MustCompile(`@mapType\s*\(\s*['"](.*?)['"]\s*\)`)
+	listTypeRegex := regexp.MustCompile(`@listType\s*\(\s*['"](.*?)['"]\s*\)`)
+	listMapKeysRegex := regexp.MustCompile(`@listMapKeys\s*\(\s*\[(.*?)\]\s*\)`)
 	
 	var pendingAnnotations []string
+	var pendingComments []string
 
 	for scanner.Scan() {
 		line := scanner.Text()
 		trimmedLine := strings.TrimSpace(line)
 
-		// Skip empty lines and comments (except docstrings)
+		// Skip empty lines (except docstrings and when collecting comments)
 		if trimmedLine == "" && !inDocstring {
+			// Clear pending comments on empty line if not in schema
+			if !inSchema {
+				pendingComments = nil
+			}
 			continue
 		}
 		
-		// Check for validation annotations in comments
+		// Parse metadata variables (before schema definitions)
+		if !inSchema {
+			if matches := xrKindRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
+				metadata.XRKind = matches[1]
+				continue
+			}
+			if matches := xrVersionRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
+				metadata.XRVersion = matches[1]
+				continue
+			}
+			if matches := groupRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
+				metadata.Group = matches[1]
+				continue
+			}
+			if matches := categoriesRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
+				categoriesStr := matches[1]
+				categories := strings.Split(categoriesStr, ",")
+				for i, cat := range categories {
+					cat = strings.TrimSpace(cat)
+					cat = strings.Trim(cat, `"'`)
+					categories[i] = cat
+				}
+				metadata.Categories = categories
+				continue
+			}
+			if matches := servedRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
+				served := strings.ToLower(matches[1]) == "true"
+				metadata.Served = &served
+				continue
+			}
+			if matches := referenceableRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
+				referenceable := strings.ToLower(matches[1]) == "true"
+				metadata.Referenceable = &referenceable
+				continue
+			}
+		}
+		
+		// Check for comments (annotations and descriptions)
 		if strings.HasPrefix(trimmedLine, "#") && !inDocstring {
-			// Store annotation for next field
-			pendingAnnotations = append(pendingAnnotations, trimmedLine)
+			commentText := strings.TrimPrefix(trimmedLine, "#")
+			commentText = strings.TrimSpace(commentText)
+			
+			// Check if it's an annotation
+			if strings.HasPrefix(commentText, "@") {
+				pendingAnnotations = append(pendingAnnotations, trimmedLine)
+			} else if inSchema {
+				// It's a regular comment - store for next field description
+				pendingComments = append(pendingComments, commentText)
+			}
 			continue
 		}
 
@@ -165,23 +248,10 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 					fieldType = strings.TrimSpace(parts[0])
 				}
 				
-				// Extract inline comment as description (before regex match to avoid conflict)
-				inlineDescription := ""
-				if commentIndex := strings.Index(line, "#"); commentIndex > 0 {
-					// Check if this is after the field definition
-					beforeComment := line[:commentIndex]
-					if strings.Contains(beforeComment, ":") {
-						inlineDescription = strings.TrimSpace(line[commentIndex+1:])
-						// Also remove comment from default value if present
-						if defaultValue != "" && strings.Contains(defaultValue, "#") {
-							parts := strings.SplitN(defaultValue, "#", 2)
-							defaultValue = strings.TrimSpace(parts[0])
-							// If description wasn't already set, use comment from default line
-							if inlineDescription == "" {
-								inlineDescription = strings.TrimSpace(parts[1])
-							}
-						}
-					}
+				// Remove inline comments from default value if present
+				if defaultValue != "" && strings.Contains(defaultValue, "#") {
+					parts := strings.SplitN(defaultValue, "#", 2)
+					defaultValue = strings.TrimSpace(parts[0])
 				}
 
 				field := Field{
@@ -191,16 +261,17 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 					Default:  defaultValue,
 				}
 				
-				// Set description from inline comment if present
-				if inlineDescription != "" {
-					field.Description = inlineDescription
+				// Set description from pending comments (above field)
+				if len(pendingComments) > 0 {
+					field.Description = strings.Join(pendingComments, "\n")
+					pendingComments = nil
 				}
 				
 				// Apply validation annotations from pending comments
 				applyValidationAnnotations(&field, pendingAnnotations, 
 					patternRegex, minLengthRegex, maxLengthRegex, 
 					minimumRegex, maximumRegex, enumRegex, immutableRegex, celValidationRegex,
-					preserveUnknownFieldsRegex, mapTypeRegex)
+					preserveUnknownFieldsRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex)
 				pendingAnnotations = nil
 				
 				currentSchema.Fields = append(currentSchema.Fields, field)
@@ -224,15 +295,16 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	}
 
 	return &ParseResult{
-		Schemas: schemas,
-		Primary: primarySchema,
+		Schemas:  schemas,
+		Primary:  primarySchema,
+		Metadata: metadata,
 	}, nil
 }
 
 // applyValidationAnnotations applies validation annotations from comments to a field
 func applyValidationAnnotations(field *Field, annotations []string, 
 	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, enumRegex, immutableRegex, celValidationRegex,
-	preserveUnknownFieldsRegex, mapTypeRegex *regexp.Regexp) {
+	preserveUnknownFieldsRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex *regexp.Regexp) {
 	
 	for _, annotation := range annotations {
 		// Check for pattern
@@ -307,6 +379,23 @@ func applyValidationAnnotations(field *Field, annotations []string,
 		// Check for mapType
 		if matches := mapTypeRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			field.MapType = matches[1]
+		}
+		
+		// Check for listType
+		if matches := listTypeRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+			field.ListType = matches[1]
+		}
+		
+		// Check for listMapKeys
+		if matches := listMapKeysRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+			keysStr := matches[1]
+			keys := strings.Split(keysStr, ",")
+			for i, key := range keys {
+				key = strings.TrimSpace(key)
+				key = strings.Trim(key, `"'`)
+				keys[i] = key
+			}
+			field.ListMapKeys = keys
 		}
 	}
 }

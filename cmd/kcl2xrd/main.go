@@ -35,9 +35,9 @@ func main() {
 
 	rootCmd.Flags().StringVarP(&inputFile, "input", "i", "", "Input KCL schema file (required)")
 	rootCmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output XRD file (stdout if not specified)")
-	rootCmd.Flags().StringVarP(&group, "group", "g", "", "API group for the XRD (required)")
+	rootCmd.Flags().StringVarP(&group, "group", "g", "", "API group for the XRD (required unless specified in KCL file)")
 	rootCmd.Flags().StringVarP(&version, "version", "v", "v1alpha1", "API version for the XRD")
-	rootCmd.Flags().StringVarP(&schemaName, "schema", "s", "", "Name of the schema to convert (defaults to last schema in file)")
+	rootCmd.Flags().StringVarP(&schemaName, "schema", "s", "", "Name of the schema to convert (defaults to xrKind or last schema in file)")
 	rootCmd.Flags().BoolVar(&withClaims, "with-claims", false, "Generate XRD with claimNames")
 	rootCmd.Flags().StringVar(&claimKind, "claim-kind", "", "Kind for the claim (defaults to schema name without 'X' prefix)")
 	rootCmd.Flags().StringVar(&claimPlural, "claim-plural", "", "Plural for the claim (auto-generated if not specified)")
@@ -46,7 +46,6 @@ func main() {
 	rootCmd.Flags().StringSliceVar(&categories, "categories", nil, "Categories for the XRD (comma-separated)")
 	rootCmd.Flags().StringSliceVar(&printerColumns, "printer-columns", nil, "Additional printer columns (format: name:type:jsonPath:description)")
 	rootCmd.MarkFlagRequired("input")
-	rootCmd.MarkFlagRequired("group")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -68,9 +67,45 @@ func run(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("schema '%s' not found in file. Available schemas: %v", schemaName, getSchemaNames(result.Schemas))
 		}
 		selectedSchema = result.Schemas[schemaName]
+	} else if result.Metadata != nil && result.Metadata.XRKind != "" {
+		// Use XRKind from metadata if specified
+		if result.Schemas[result.Metadata.XRKind] == nil {
+			return fmt.Errorf("schema '%s' (from xrKind) not found in file. Available schemas: %v", result.Metadata.XRKind, getSchemaNames(result.Schemas))
+		}
+		selectedSchema = result.Schemas[result.Metadata.XRKind]
 	} else {
 		// Use the primary (last) schema
 		selectedSchema = result.Primary
+	}
+
+	// Apply metadata from KCL file if present, CLI flags override
+	if result.Metadata != nil {
+		if group == "" && result.Metadata.Group != "" {
+			group = result.Metadata.Group
+		}
+		if version == "v1alpha1" && result.Metadata.XRVersion != "" {
+			version = result.Metadata.XRVersion
+		}
+		if len(categories) == 0 && len(result.Metadata.Categories) > 0 {
+			categories = result.Metadata.Categories
+		}
+		if result.Metadata.Served != nil && !cmd.Flags().Changed("served") {
+			served = *result.Metadata.Served
+		}
+		if result.Metadata.Referenceable != nil && !cmd.Flags().Changed("referenceable") {
+			referenceable = *result.Metadata.Referenceable
+		}
+		if len(printerColumns) == 0 && len(result.Metadata.PrinterColumns) > 0 {
+			// Convert parser.PrinterColumn to generator.PrinterColumn
+			for _, pc := range result.Metadata.PrinterColumns {
+				printerColumns = append(printerColumns, fmt.Sprintf("%s:%s:%s:%s", pc.Name, pc.Type, pc.JSONPath, pc.Description))
+			}
+		}
+	}
+	
+	// Validate that group is provided
+	if group == "" {
+		return fmt.Errorf("API group must be specified either via --group flag or 'group' variable in KCL file")
 	}
 
 	// Prepare generator options

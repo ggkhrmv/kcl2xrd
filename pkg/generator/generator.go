@@ -97,15 +97,17 @@ type PropertySchema struct {
 	Default     interface{}               `yaml:"default,omitempty"`
 	// Validation fields
 	Pattern                    string          `yaml:"pattern,omitempty"`
-	MinLength                  *int            `yaml:"minLength,omitempty"`
-	MaxLength                  *int            `yaml:"maxLength,omitempty"`
-	Minimum                    *int            `yaml:"minimum,omitempty"`
-	Maximum                    *int            `yaml:"maximum,omitempty"`
-	Enum                       []string        `yaml:"enum,omitempty"`
-	XKubernetesValidations     []K8sValidation `yaml:"x-kubernetes-validations,omitempty"`
-	XKubernetesImmutable       *bool           `yaml:"x-kubernetes-immutable,omitempty"`
-	XKubernetesPreserveUnknownFields *bool     `yaml:"x-kubernetes-preserve-unknown-fields,omitempty"`
-	XKubernetesMapType         string          `yaml:"x-kubernetes-map-type,omitempty"`
+	MinLength                    *int            `yaml:"minLength,omitempty"`
+	MaxLength                    *int            `yaml:"maxLength,omitempty"`
+	Minimum                      *int            `yaml:"minimum,omitempty"`
+	Maximum                      *int            `yaml:"maximum,omitempty"`
+	Enum                         []string        `yaml:"enum,omitempty"`
+	XKubernetesValidations       []K8sValidation `yaml:"x-kubernetes-validations,omitempty"`
+	XKubernetesImmutable         *bool           `yaml:"x-kubernetes-immutable,omitempty"`
+	XKubernetesPreserveUnknownFields *bool       `yaml:"x-kubernetes-preserve-unknown-fields,omitempty"`
+	XKubernetesMapType           string          `yaml:"x-kubernetes-map-type,omitempty"`
+	XKubernetesListType          string          `yaml:"x-kubernetes-list-type,omitempty"`
+	XKubernetesListMapKeys       []string        `yaml:"x-kubernetes-list-map-keys,omitempty"`
 }
 
 // K8sValidation represents Kubernetes CEL validation rules
@@ -369,6 +371,14 @@ func applyFieldValidationsAndDefaults(field parser.Field, schema *PropertySchema
 	
 	if field.MapType != "" {
 		schema.XKubernetesMapType = field.MapType
+	}
+	
+	if field.ListType != "" {
+		schema.XKubernetesListType = field.ListType
+	}
+	
+	if len(field.ListMapKeys) > 0 {
+		schema.XKubernetesListMapKeys = field.ListMapKeys
 	}
 	
 	// Apply CEL validations
