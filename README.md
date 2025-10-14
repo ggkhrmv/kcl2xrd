@@ -25,11 +25,11 @@ cd kcl2xrd && make build
 
 - **In-file XRD metadata** with `__xrd_` prefix variables - define everything in your KCL files
 - **`@xrd` annotation** - mark parent schema, ignore unrelated code
-- **Validation annotations** - patterns, enums, ranges, CEL expressions, immutability
+- **Validation annotations** - patterns, enums, ranges, string/numeric constraints, CEL expressions
+- **Kubernetes-specific annotations** - immutability, preserveUnknownFields, mapType, listType, listMapKeys
 - **Nested schema expansion** - automatic reference resolution
 - **`{any:any}` syntax** - arbitrary property objects with `@preserveUnknownFields`
 - **Claims support** - automatic X-prefix handling for composite resources
-- **Complete Kubernetes annotations** - all x-kubernetes-* fields supported
 
 ## Installation
 
@@ -131,32 +131,162 @@ kcl2xrd -i xdatabase.k -g db.example.org --with-claims -o output.yaml
 | `{K:V}` | `object` | `labels: {str:str}` |
 | `{any:any}` | `object` + `x-kubernetes-preserve-unknown-fields` | `config: {any:any}` |
 
-## Validation Annotations
+## Annotations Reference
+
+### Schema-Level Annotations
+
+#### `@xrd`
+Marks the schema to be converted to XRD. Only one schema in a file should be marked with `@xrd`.
+
+```kcl
+# @xrd
+schema MyResource:
+    name: str
+```
+
+### String Validation Annotations
+
+#### `@pattern(regex)`
+Applies a regex pattern validation to string fields.
+
+```kcl
+# @pattern("^[a-z0-9-]+$")
+name: str
+```
+
+#### `@minLength(n)`
+Sets minimum length for string fields.
+
+```kcl
+# @minLength(3)
+name: str
+```
+
+#### `@maxLength(n)`
+Sets maximum length for string fields.
+
+```kcl
+# @maxLength(63)
+name: str
+```
+
+### Numeric Validation Annotations
+
+#### `@minimum(n)`
+Sets minimum value for integer fields.
+
+```kcl
+# @minimum(0)
+replicas: int
+```
+
+#### `@maximum(n)`
+Sets maximum value for integer fields.
+
+```kcl
+# @maximum(100)
+replicas: int
+```
+
+### Enum Validation
+
+#### `@enum([values])`
+Restricts field to specific allowed values.
+
+```kcl
+# @enum(["active", "inactive", "pending"])
+status: str
+```
+
+### Kubernetes-Specific Annotations
+
+#### `@immutable`
+Marks a field as immutable (sets `x-kubernetes-immutable: true`).
+
+```kcl
+# @immutable
+resourceId: str
+```
+
+#### `@preserveUnknownFields`
+Allows arbitrary properties (sets `x-kubernetes-preserve-unknown-fields: true`). Typically used with `{any:any}` type.
+
+```kcl
+# @preserveUnknownFields
+config: {any:any}
+```
+
+#### `@mapType(type)`
+Sets `x-kubernetes-map-type`. Valid values: `"atomic"`, `"granular"`.
+
+```kcl
+# @mapType("atomic")
+settings: {str:str}
+```
+
+#### `@listType(type)`
+Sets `x-kubernetes-list-type`. Valid values: `"atomic"`, `"set"`, `"map"`.
+
+```kcl
+# @listType("set")
+tags: [str]
+```
+
+#### `@listMapKeys([keys])`
+Sets `x-kubernetes-list-map-keys` for list-map type lists.
+
+```kcl
+# @listType("map")
+# @listMapKeys(["name"])
+items: [Item]
+```
+
+### CEL Validation
+
+#### `@validate(rule, message?)`
+Adds CEL (Common Expression Language) validation rules with optional error message.
+
+```kcl
+# @validate("self > 0", "Must be positive")
+value: int
+
+# @validate("self.startsWith('prefix-')")
+identifier: str
+```
+
+### Complete Example
 
 ```kcl
 schema ValidatedResource:
+    # String with pattern and length constraints
     # @pattern("^[a-z0-9-]+$")
     # @minLength(3)
     # @maxLength(63)
     name: str
     
-    # @enum(["active", "inactive"])
+    # Enum validation
+    # @enum(["active", "inactive", "pending"])
     status?: str = "active"
     
+    # Immutable field
     # @immutable
     resourceId: str
     
+    # Numeric constraints
     # @minimum(0)
     # @maximum(100)
     replicas?: int = 1
     
+    # Arbitrary properties with atomic map type
     # @preserveUnknownFields
     # @mapType("atomic")
     settings?: {any:any}
     
+    # List with set semantics
     # @listType("set")
     tags?: [str]
     
+    # CEL validation
     # @validate("self > 0", "Must be positive")
     value: int
 ```
