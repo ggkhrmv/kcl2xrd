@@ -219,6 +219,16 @@ Sets maximum value for integer fields.
 replicas: int
 ```
 
+### Array Validation Annotations
+
+#### `@minItems(n)`
+Sets minimum number of items in arrays.
+
+```kcl
+# @minItems(1)
+tags: [str]
+```
+
 ### Enum Validation
 
 #### `@enum([values])`
@@ -316,6 +326,10 @@ schema ValidatedResource:
     # List with set semantics
     # @listType("set")
     tags?: [str]
+    
+    # Array with minimum items
+    # @minItems(1)
+    requiredItems: [str]
     
     # CEL validation
     # @validate("self > 0", "Must be positive")

@@ -432,3 +432,59 @@ func TestParseKCLFileWithAnyType(t *testing.T) {
 		t.Error("Expected PreserveUnknownFields to be true")
 	}
 }
+
+func TestParseKCLFileWithMinItems(t *testing.T) {
+	// Test that @minItems annotation is properly parsed
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.k")
+	
+	content := `schema TestSchema:
+    # @minItems(1)
+    tags: [str]
+    
+    # @minItems(2)
+    # @listType("set")
+    items?: [str]
+`
+	
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	
+	result, err := ParseKCLFileWithSchemas(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+	}
+	
+	schema := result.Schemas["TestSchema"]
+	if schema == nil {
+		t.Fatal("Expected TestSchema to be parsed")
+	}
+	
+	// Check tags field
+	if len(schema.Fields) < 1 {
+		t.Fatal("Expected at least 1 field")
+	}
+	tagsField := schema.Fields[0]
+	if tagsField.Name != "tags" {
+		t.Errorf("Expected field name 'tags', got '%s'", tagsField.Name)
+	}
+	if tagsField.MinItems == nil || *tagsField.MinItems != 1 {
+		t.Error("Expected minItems of 1 for tags field")
+	}
+	
+	// Check items field
+	if len(schema.Fields) < 2 {
+		t.Fatal("Expected at least 2 fields")
+	}
+	itemsField := schema.Fields[1]
+	if itemsField.Name != "items" {
+		t.Errorf("Expected field name 'items', got '%s'", itemsField.Name)
+	}
+	if itemsField.MinItems == nil || *itemsField.MinItems != 2 {
+		t.Error("Expected minItems of 2 for items field")
+	}
+	if itemsField.ListType != "set" {
+		t.Errorf("Expected listType 'set', got '%s'", itemsField.ListType)
+	}
+}
