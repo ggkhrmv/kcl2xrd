@@ -256,3 +256,109 @@ func TestGenerateXRDWithCustomClaimNames(t *testing.T) {
 		t.Errorf("Expected claim plural 'customclaims', got '%v'", claimNames["plural"])
 	}
 }
+
+func TestConvertFieldWithAnyType(t *testing.T) {
+	// Test that 'any' type fields don't get type: object
+	field := parser.Field{
+		Name:                  "principal",
+		Type:                  "any",
+		Required:              false,
+		Description:           "The principals this statement applies to",
+		PreserveUnknownFields: true,
+	}
+
+	schema := convertFieldToPropertySchema(field)
+
+	// 'any' type should NOT have a type set
+	if schema.Type != "" {
+		t.Errorf("Expected type to be empty for 'any' type, got '%s'", schema.Type)
+	}
+
+	// But should have PreserveUnknownFields
+	if schema.XKubernetesPreserveUnknownFields == nil || !*schema.XKubernetesPreserveUnknownFields {
+		t.Error("Expected x-kubernetes-preserve-unknown-fields to be true")
+	}
+
+	// Description should still be set
+	if schema.Description != "The principals this statement applies to" {
+		t.Errorf("Expected description to be set, got '%s'", schema.Description)
+	}
+}
+
+func TestGenerateXRDWithAnyTypeFields(t *testing.T) {
+	// Test full XRD generation with 'any' type fields
+	schema := &parser.Schema{
+		Name: "TestSchema",
+		Fields: []parser.Field{
+			{
+				Name:                  "principal",
+				Type:                  "any",
+				Required:              false,
+				Description:           "Principal field",
+				PreserveUnknownFields: true,
+			},
+			{
+				Name:                  "action",
+				Type:                  "any",
+				Required:              false,
+				Description:           "Action field",
+				PreserveUnknownFields: true,
+			},
+			{
+				Name:     "name",
+				Type:     "str",
+				Required: true,
+			},
+		},
+	}
+
+	xrdYAML, err := GenerateXRD(schema, "example.org", "v1alpha1")
+	if err != nil {
+		t.Fatalf("GenerateXRD failed: %v", err)
+	}
+
+	// Parse the YAML
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Generated XRD is not valid YAML: %v", err)
+	}
+
+	// Navigate to parameters properties
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	versionSchema := version["schema"].(map[string]interface{})
+	openAPISchema := versionSchema["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPISchema["properties"].(map[string]interface{})
+	specProp := properties["spec"].(map[string]interface{})
+	specProps := specProp["properties"].(map[string]interface{})
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+
+	// Check principal field
+	principal := paramProps["principal"].(map[string]interface{})
+	if _, hasType := principal["type"]; hasType {
+		t.Error("'any' type field should not have 'type' property")
+	}
+	if preserveUnknown := principal["x-kubernetes-preserve-unknown-fields"]; preserveUnknown != true {
+		t.Error("Expected x-kubernetes-preserve-unknown-fields to be true for 'any' type")
+	}
+	if principal["description"] != "Principal field" {
+		t.Errorf("Expected description 'Principal field', got '%v'", principal["description"])
+	}
+
+	// Check action field
+	action := paramProps["action"].(map[string]interface{})
+	if _, hasType := action["type"]; hasType {
+		t.Error("'any' type field should not have 'type' property")
+	}
+	if preserveUnknown := action["x-kubernetes-preserve-unknown-fields"]; preserveUnknown != true {
+		t.Error("Expected x-kubernetes-preserve-unknown-fields to be true for 'any' type")
+	}
+
+	// Check name field has type
+	name := paramProps["name"].(map[string]interface{})
+	if name["type"] != "string" {
+		t.Errorf("Expected type 'string' for name field, got '%v'", name["type"])
+	}
+}
