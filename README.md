@@ -212,5 +212,4 @@ git tag v1.0.0 && git push origin v1.0.0
 
 ## License
 
-Apache License 2.0
-go install github.com/ggkhrmv/kcl2xrd/cmd/kcl2xrd@latest
+Apache License 2.0 - See [LICENSE](LICENSE) file for details.
