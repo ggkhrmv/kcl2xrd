@@ -108,6 +108,8 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	xrKindRegex := regexp.MustCompile(`^\s*__xrd_kind\s*=\s*['"](.*?)['"]\s*$`)
 	xrVersionRegex := regexp.MustCompile(`^\s*__xrd_version\s*=\s*['"](.*?)['"]\s*$`)
 	groupRegex := regexp.MustCompile(`^\s*__xrd_group\s*=\s*['"](.*?)['"]\s*$`)
+	// Also match __xrd_group with any expression (skip parsing, user must provide via CLI)
+	groupExprRegex := regexp.MustCompile(`^\s*__xrd_group\s*=\s*(.+)$`)
 	categoriesRegex := regexp.MustCompile(`^\s*__xrd_categories\s*=\s*\[(.*?)\]\s*$`)
 	servedRegex := regexp.MustCompile(`^\s*__xrd_served\s*=\s*(true|false|True|False)\s*$`)
 	referenceableRegex := regexp.MustCompile(`^\s*__xrd_referenceable\s*=\s*(true|false|True|False)\s*$`)
@@ -156,6 +158,13 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 			}
 			if matches := groupRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
 				metadata.Group = matches[1]
+				continue
+			}
+			// If __xrd_group doesn't match the simple pattern, check for expression pattern
+			// In this case, we just skip it and user must provide group via CLI flag
+			if groupExprRegex.MatchString(trimmedLine) && !groupRegex.MatchString(trimmedLine) {
+				// __xrd_group is an expression (like format string), skip it
+				// User will need to provide --group flag
 				continue
 			}
 			if matches := categoriesRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
@@ -265,6 +274,13 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 			continue
 		}
 
+		// Check if we should exit schema (non-indented line that's not empty or comment)
+		if inSchema && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && trimmedLine != "" {
+			// Non-indented line - schema has ended
+			inSchema = false
+			currentField = nil
+		}
+		
 		// Parse field definitions
 		if inSchema && currentSchema != nil {
 			if matches := fieldRegex.FindStringSubmatch(line); matches != nil {

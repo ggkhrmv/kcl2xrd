@@ -267,6 +267,13 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 
 	// Map KCL types to OpenAPI types
 	switch {
+	case field.Type == "any":
+		// 'any' type should not have a type specified, only preserve unknown fields
+		// Don't set schema.Type
+		if field.PreserveUnknownFields {
+			preserve := true
+			schema.XKubernetesPreserveUnknownFields = &preserve
+		}
 	case field.Type == "str":
 		schema.Type = "string"
 	case field.Type == "int":
