@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	kcl "kcl-lang.io/kcl-go"
 )
 
 // Schema represents a parsed KCL schema
@@ -84,6 +86,9 @@ func ParseKCLFile(filename string) (*Schema, error) {
 
 // ParseKCLFileWithSchemas parses a KCL schema file and returns all schemas
 func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
+	// First, try to evaluate metadata using KCL runtime for more flexibility
+	kclMetadata, _ := evaluateMetadataWithKCL(filename)
+	
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
@@ -108,6 +113,8 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	xrKindRegex := regexp.MustCompile(`^\s*__xrd_kind\s*=\s*['"](.*?)['"]\s*$`)
 	xrVersionRegex := regexp.MustCompile(`^\s*__xrd_version\s*=\s*['"](.*?)['"]\s*$`)
 	groupRegex := regexp.MustCompile(`^\s*__xrd_group\s*=\s*['"](.*?)['"]\s*$`)
+	// Also match __xrd_group with any expression (skip parsing, user must provide via CLI)
+	groupExprRegex := regexp.MustCompile(`^\s*__xrd_group\s*=\s*(.+)$`)
 	categoriesRegex := regexp.MustCompile(`^\s*__xrd_categories\s*=\s*\[(.*?)\]\s*$`)
 	servedRegex := regexp.MustCompile(`^\s*__xrd_served\s*=\s*(true|false|True|False)\s*$`)
 	referenceableRegex := regexp.MustCompile(`^\s*__xrd_referenceable\s*=\s*(true|false|True|False)\s*$`)
@@ -130,6 +137,11 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	
 	var pendingAnnotations []string
 	var pendingComments []string
+	
+	// Track variable assignments for resolving expressions
+	variables := make(map[string]string)
+	// Regex for simple variable assignments like: _xrSubgroup = "aws"
+	varAssignRegex := regexp.MustCompile(`^\s*(_\w+)\s*=\s*['"](.*?)['"]\s*$`)
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -146,6 +158,13 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 		
 		// Parse metadata variables (before schema definitions)
 		if !inSchema {
+			// Track variable assignments for later resolution
+			if matches := varAssignRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
+				varName := matches[1]
+				varValue := matches[2]
+				variables[varName] = varValue
+			}
+			
 			if matches := xrKindRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
 				metadata.XRKind = matches[1]
 				continue
@@ -156,6 +175,15 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 			}
 			if matches := groupRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
 				metadata.Group = matches[1]
+				continue
+			}
+			// If __xrd_group doesn't match the simple pattern, try to resolve format expressions
+			if groupExprRegex.MatchString(trimmedLine) && !groupRegex.MatchString(trimmedLine) {
+				// Try to resolve format expressions like: "{}.{}".format(var1, var2)
+				if resolvedGroup := resolveFormatExpression(trimmedLine, variables); resolvedGroup != "" {
+					metadata.Group = resolvedGroup
+				}
+				// If resolution failed, user will need to provide --group flag
 				continue
 			}
 			if matches := categoriesRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
@@ -265,6 +293,13 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 			continue
 		}
 
+		// Check if we should exit schema (non-indented line that's not empty or comment)
+		if inSchema && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && trimmedLine != "" {
+			// Non-indented line - schema has ended
+			inSchema = false
+			currentField = nil
+		}
+		
 		// Parse field definitions
 		if inSchema && currentSchema != nil {
 			if matches := fieldRegex.FindStringSubmatch(line); matches != nil {
@@ -326,6 +361,27 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 
 	if primarySchema == nil {
 		return nil, fmt.Errorf("no schema found in file")
+	}
+	
+	// Merge KCL-evaluated metadata with manually parsed metadata
+	// KCL evaluation takes priority as it's more accurate
+	if kclMetadata.XRKind != "" {
+		metadata.XRKind = kclMetadata.XRKind
+	}
+	if kclMetadata.Group != "" {
+		metadata.Group = kclMetadata.Group
+	}
+	if kclMetadata.XRVersion != "" {
+		metadata.XRVersion = kclMetadata.XRVersion
+	}
+	if len(kclMetadata.Categories) > 0 {
+		metadata.Categories = kclMetadata.Categories
+	}
+	if kclMetadata.Served != nil {
+		metadata.Served = kclMetadata.Served
+	}
+	if kclMetadata.Referenceable != nil {
+		metadata.Referenceable = kclMetadata.Referenceable
 	}
 
 	return &ParseResult{
@@ -476,4 +532,138 @@ func splitPrinterColumns(s string) []string {
 	}
 	
 	return result
+}
+
+// resolveFormatExpression attempts to resolve KCL format expressions like:
+// __xrd_group = "{}.{}".format(_xrSubgroup, _platformGroup)
+// Returns the resolved string if successful, empty string otherwise
+func resolveFormatExpression(line string, variables map[string]string) string {
+	// Pattern to match: __xrd_group = "format_string".format(var1, var2, ...)
+	formatRegex := regexp.MustCompile(`^\s*__xrd_group\s*=\s*["'](.*?)["']\.format\((.*?)\)\s*$`)
+	matches := formatRegex.FindStringSubmatch(line)
+	if len(matches) < 3 {
+		return ""
+	}
+	
+	formatStr := matches[1]
+	argsStr := matches[2]
+	
+	// Parse the arguments
+	args := strings.Split(argsStr, ",")
+	var resolvedArgs []string
+	
+	for _, arg := range args {
+		arg = strings.TrimSpace(arg)
+		// Remove leading/trailing quotes if present
+		arg = strings.Trim(arg, `"'`)
+		
+		// Look up variable value
+		if val, exists := variables[arg]; exists {
+			resolvedArgs = append(resolvedArgs, val)
+		} else {
+			// Variable not found - cannot resolve this expression
+			// This includes cases like settings.PLATFORM_API_GROUP which aren't simple variables
+			return ""
+		}
+	}
+	
+	// Replace {} placeholders with actual values
+	result := formatStr
+	for _, val := range resolvedArgs {
+		result = strings.Replace(result, "{}", val, 1)
+	}
+	
+	// Check if all placeholders were replaced
+	if strings.Contains(result, "{}") {
+		// Still has unreplaced placeholders
+		return ""
+	}
+	
+	return result
+}
+
+// evaluateMetadataWithKCL uses KCL runtime to evaluate metadata variables
+// This is more flexible than parsing format strings manually
+func evaluateMetadataWithKCL(filename string) (*XRDMetadata, error) {
+	metadata := &XRDMetadata{}
+	
+	// First, try to run KCL with the file as-is (with imports)
+	// This allows imports to work when they can be resolved
+	result, err := kcl.RunFiles([]string{filename}, kcl.WithShowHidden(true))
+	if err != nil {
+		// If evaluation failed (possibly due to unresolvable imports),
+		// try again with imports filtered out
+		content, readErr := os.ReadFile(filename)
+		if readErr != nil {
+			return metadata, nil
+		}
+		
+		// Filter out import statements
+		lines := strings.Split(string(content), "\n")
+		var filteredLines []string
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			// Skip import statements
+			if strings.HasPrefix(trimmed, "import ") {
+				continue
+			}
+			filteredLines = append(filteredLines, line)
+		}
+		filteredContent := strings.Join(filteredLines, "\n")
+		
+		// Try running without imports
+		result, err = kcl.Run("", kcl.WithCode(filteredContent), kcl.WithShowHidden(true))
+		if err != nil {
+			// If it still fails, return empty metadata (will fall back to manual parsing)
+			return metadata, nil
+		}
+	}
+	
+	// Extract metadata variables from the result
+	kclResult := result.First()
+	if kclResult == nil {
+		return metadata, nil
+	}
+	
+	// Convert to map
+	resultMap, err := kclResult.ToMap()
+	if err != nil {
+		return metadata, nil
+	}
+	
+	// Try to extract __xrd_kind
+	if kind, ok := resultMap["__xrd_kind"].(string); ok {
+		metadata.XRKind = kind
+	}
+	
+	// Try to extract __xrd_group
+	if group, ok := resultMap["__xrd_group"].(string); ok {
+		metadata.Group = group
+	}
+	
+	// Try to extract __xrd_version
+	if version, ok := resultMap["__xrd_version"].(string); ok {
+		metadata.XRVersion = version
+	}
+	
+	// Try to extract __xrd_served
+	if served, ok := resultMap["__xrd_served"].(bool); ok {
+		metadata.Served = &served
+	}
+	
+	// Try to extract __xrd_referenceable
+	if referenceable, ok := resultMap["__xrd_referenceable"].(bool); ok {
+		metadata.Referenceable = &referenceable
+	}
+	
+	// Try to extract __xrd_categories
+	if categories, ok := resultMap["__xrd_categories"].([]interface{}); ok {
+		for _, cat := range categories {
+			if catStr, ok := cat.(string); ok {
+				metadata.Categories = append(metadata.Categories, catStr)
+			}
+		}
+	}
+	
+	return metadata, nil
 }

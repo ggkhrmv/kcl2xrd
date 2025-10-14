@@ -24,12 +24,15 @@ cd kcl2xrd && make build
 ## Key Features
 
 - **In-file XRD metadata** with `__xrd_` prefix variables - define everything in your KCL files
+- **KCL runtime evaluation** - automatically evaluates metadata variables including format expressions, property access, and variable references
+- **Import support** - reuse central configuration files across multiple XRDs with KCL imports
 - **`@xrd` annotation** - mark parent schema, ignore unrelated code
 - **Validation annotations** - patterns, enums, ranges, string/numeric constraints, CEL expressions
 - **Kubernetes-specific annotations** - immutability, preserveUnknownFields, mapType, listType, listMapKeys
 - **Nested schema expansion** - automatic reference resolution
+- **`any` type support** - fields without type constraints for maximum flexibility (IAM policies, etc.)
 - **`{any:any}` syntax** - arbitrary property objects with `@preserveUnknownFields`
-- **Claims support** - automatic X-prefix handling for composite resources
+- **Claims support** - automatic X-prefix handling for composite resources with unprefixed `__xrd_kind`
 
 ## Installation
 
@@ -97,22 +100,40 @@ kcl2xrd -i file.k -o output.yaml
 
 ### Claims Support
 
-When using `--with-claims`, the tool automatically handles X-prefix naming:
+When using `--with-claims`, the tool automatically handles X-prefix naming. With the improvements in this version, you can now use unprefixed `__xrd_kind` for a more natural workflow:
 
-```bash
-# Schema: PostgreSQLInstance (no X-prefix)
-kcl2xrd -i postgresql.k -g db.example.org --with-claims -o output.yaml
+**Using Unprefixed `__xrd_kind` (Recommended):**
+```kcl
+__xrd_kind = "Bucket"  # No X prefix needed
+__xrd_group = "storage.example.org"
 
-# Generates:
-# - XRD Kind: XPostgreSQLInstance (X-prefix added)
-# - Claim Kind: PostgreSQLInstance (original name)
+# @xrd
+schema Bucket:
+    name: str
 ```
 
-If schema already has X-prefix:
+```bash
+kcl2xrd -i bucket.k --with-claims -o output.yaml
+
+# Generates:
+# - XRD Kind: XBucket (X-prefix automatically added)
+# - XRD Plural: xbuckets
+# - XRD Name: xbuckets.storage.example.org
+# - Claim Kind: Bucket (unprefixed)
+# - Claim Plural: buckets
+```
+
+**Backward Compatible with Prefixed Names:**
+```kcl
+__xrd_kind = "XDatabase"  # Already has X prefix
+
+# @xrd
+schema Database:
+    name: str
+```
 
 ```bash
-# Schema: XDatabase (has X-prefix)
-kcl2xrd -i xdatabase.k -g db.example.org --with-claims -o output.yaml
+kcl2xrd -i database.k --with-claims -o output.yaml
 
 # Generates:
 # - XRD Kind: XDatabase (keeps X-prefix)
@@ -127,9 +148,12 @@ kcl2xrd -i xdatabase.k -g db.example.org --with-claims -o output.yaml
 | `int` | `integer` | `count: int` |
 | `float` | `number` | `price: float` |
 | `bool` | `boolean` | `enabled: bool` |
+| `any` | (no type) + `x-kubernetes-preserve-unknown-fields` | `principal?: any` |
 | `[T]` | `array` | `tags: [str]` |
 | `{K:V}` | `object` | `labels: {str:str}` |
 | `{any:any}` | `object` + `x-kubernetes-preserve-unknown-fields` | `config: {any:any}` |
+
+**Note:** The `any` type is particularly useful for fields that can accept arbitrary JSON/YAML data (like AWS IAM policy principals, actions, etc.). When using `any` type with `@preserveUnknownFields` annotation, the field will not have a type constraint, allowing maximum flexibility.
 
 ## Annotations Reference
 
@@ -295,13 +319,170 @@ schema ValidatedResource:
 
 Define in your KCL file with `__xrd_` prefix:
 
-- `__xrd_kind` - Schema to convert
-- `__xrd_group` - API group
+- `__xrd_kind` - Schema kind name (can be variable reference like `_myKind`)
+- `__xrd_group` - API group (supports literals, format expressions, property access, and variable references)
 - `__xrd_version` - API version (default: v1alpha1)
 - `__xrd_categories` - Categories list
 - `__xrd_served` - Served flag (True/False)
 - `__xrd_referenceable` - Referenceable flag (True/False)
 - `__xrd_printer_columns` - Printer columns list
+
+### Metadata Variable Resolution with KCL Runtime
+
+All metadata variables are evaluated using the KCL runtime, which provides maximum flexibility:
+
+**1. String Literals:**
+```kcl
+__xrd_kind = "Database"
+__xrd_group = "platform.example.com"
+```
+
+**2. Variable References:**
+```kcl
+_myKind = "PostgreSQL"
+_myGroup = "database.example.com"
+
+__xrd_kind = _myKind
+__xrd_group = _myGroup
+```
+
+**3. Format Expressions:**
+```kcl
+_subgroup = "storage"
+_domain = "mycorp.io"
+
+__xrd_group = "{}.{}".format(_subgroup, _domain)
+# Resolves to: storage.mycorp.io
+```
+
+**4. Property Access:**
+```kcl
+settings = {
+    PLATFORM_API_GROUP: "platform.example.com"
+}
+
+__xrd_group = "{}.{}".format("database", settings.PLATFORM_API_GROUP)
+# Resolves to: database.platform.example.com
+```
+
+**5. Imports from Central Configuration:**
+```kcl
+import base.settings
+
+__xrd_group = "{}.{}".format("storage", settings.PLATFORM_API_GROUP)
+__xrd_version = settings.DEFAULT_VERSION
+# Values resolved from imported settings module
+```
+
+### Import Support for Reusable Configuration
+
+You can create central configuration files and import them across multiple XRDs:
+
+**Central Settings File (`base/settings.k`):**
+```kcl
+# Organization-wide settings
+PLATFORM_API_GROUP = "platform.mycorp.io"
+DEFAULT_VERSION = "v1alpha1"
+DEFAULT_CATEGORIES = ["platform", "managed"]
+```
+
+**XRD File Using Imports:**
+```kcl
+import base.settings
+
+_subgroup = "database"
+
+__xrd_kind = "PostgreSQL"
+__xrd_group = "{}.{}".format(_subgroup, settings.PLATFORM_API_GROUP)
+__xrd_version = settings.DEFAULT_VERSION
+
+# @xrd
+schema PostgreSQL:
+    name: str
+    size?: int
+```
+
+**Result:**
+- Group automatically resolves to: `database.platform.mycorp.io`
+- Version uses: `v1alpha1` (from central settings)
+- No CLI flags needed!
+
+**How it works:**
+1. First, the tool tries to evaluate the file with imports intact
+2. If imports can be resolved (local modules exist), they work correctly
+3. If imports fail (missing dependencies), it falls back to filtering imports and evaluating variable references
+4. This ensures maximum flexibility while maintaining robustness
+
+**Note on `__xrd_group`:** 
+- Supports any valid KCL expression: string literals, format expressions, property access, variable references
+- Automatically evaluated using the KCL runtime for maximum flexibility
+- Works with imports from central configuration files
+- Examples:
+  - `__xrd_group = "example.org"` (literal)
+  - `__xrd_group = _myGroup` (variable reference)
+  - `__xrd_group = "{}.{}".format(_sub, _domain)` (format expression)
+  - `__xrd_group = "{}.{}".format("db", settings.API_GROUP)` (property access)
+  - `__xrd_group = "{}.{}".format("db", settings.PLATFORM_API_GROUP)` (imported module)
+
+**Note on `__xrd_kind`:**
+- Specifies the `spec.names.kind` for the XRD (e.g., `"Bucket"`, `"Database"`)
+- Supports string literals and variable references (e.g., `__xrd_kind = _myKind`)
+- When using `--with-claims` flag, accepts unprefixed names:
+  - If `__xrd_kind = "Bucket"`, generates XRD kind `XBucket` and claim kind `Bucket`
+  - Automatically adds X prefix for XRD, uses unprefixed for claims
+  - Backward compatible: if you provide `"XBucket"`, it strips and re-adds X correctly
+- The XRD `metadata.name` uses the plural of this kind (e.g., `"buckets.group"` or `"xbuckets.group"` with claims)
+- If not specified, defaults to the schema name
+- Useful when you want the XRD kind to differ from the schema name
+
+### Example with Format Expressions
+
+```kcl
+# Define variables
+_xrSubgroup = "aws"
+_platformGroup = "mycorp.io"
+
+# Use format expression - automatically evaluated by KCL
+__xrd_kind = "XBucket"
+__xrd_group = "{}.{}".format(_xrSubgroup, _platformGroup)
+
+# @xrd
+schema Bucket:
+    name: str
+```
+
+```bash
+# No --group flag needed - expression is automatically evaluated
+kcl2xrd -i bucket.k -o bucket.yaml
+# Generates:
+# - metadata.name: xbuckets.aws.mycorp.io (plural of XBucket)
+# - spec.names.kind: XBucket (from __xrd_kind)
+# - spec.group: aws.mycorp.io (from evaluated __xrd_group)
+```
+
+### Example with Complex Expressions
+
+```kcl
+# Using property access and nested structures
+settings = {
+    PLATFORM_API_GROUP: "platform.example.com"
+}
+
+_xrSubgroup = "storage"
+
+__xrd_kind = "XDatabase"
+__xrd_group = "{}.{}".format(_xrSubgroup, settings.PLATFORM_API_GROUP)
+
+# @xrd
+schema Database:
+    name: str
+```
+
+```bash
+# All expressions are evaluated using KCL runtime
+kcl2xrd -i database.k -o database.yaml
+# Automatically resolves to: storage.platform.example.com
+```
 
 ## CLI Options
 
@@ -314,6 +495,115 @@ Define in your KCL file with `__xrd_` prefix:
 - `--categories`: Override categories
 - `--printer-columns`: Override printer columns
 
+## Best Practices
+
+### Working with Complex KCL Files
+
+When your KCL files contain both schema definitions and other code (like composition templates, module-level variables, etc.), follow these guidelines:
+
+1. **Use the `@xrd` annotation** to explicitly mark which schema should be converted:
+
+```kcl
+# Other code and imports
+import base.schemas as schemas
+
+# @xrd  <-- Mark the schema for conversion
+schema MyResource:
+    name: str
+    config?: any
+
+# Other module-level variables (these won't be parsed as schema fields)
+_composition: schemas.Composition{
+    xrKind: "MyResource"
+}
+```
+
+2. **Module-level variables after schemas are ignored**: The parser stops collecting schema fields when it encounters a non-indented line (module-level code). This ensures composition templates and other variables don't pollute your XRD schema.
+
+3. **Use `any` type for flexible fields**: For fields that need to accept arbitrary JSON/YAML structures (like IAM policies, custom configurations), use the `any` type with `@preserveUnknownFields`:
+
+```kcl
+schema PolicyStatement:
+    # @preserveUnknownFields
+    # Can be a string, array, or object
+    principal?: any
+    
+    # @preserveUnknownFields
+    # Can be a string, array, or object
+    action?: any
+```
+
+This generates fields without a `type` constraint, only with `x-kubernetes-preserve-unknown-fields: true`, allowing maximum flexibility.
+
+### Organizing Configuration with Imports
+
+For teams managing multiple XRDs, create central configuration files to maintain consistency:
+
+**1. Create a central settings file:**
+
+```kcl
+# base/settings.k
+PLATFORM_API_GROUP = "platform.mycorp.io"
+DEFAULT_VERSION = "v1alpha1"
+COMMON_CATEGORIES = ["platform", "managed"]
+```
+
+**2. Import and use in your XRDs:**
+
+```kcl
+# s3bucket.k
+import base.settings
+
+__xrd_kind = "S3Bucket"
+__xrd_group = "{}.{}".format("storage", settings.PLATFORM_API_GROUP)
+__xrd_version = settings.DEFAULT_VERSION
+
+# @xrd
+schema S3Bucket:
+    name: str
+    versioned?: bool
+```
+
+```kcl
+# database.k
+import base.settings
+
+__xrd_kind = "PostgreSQL"
+__xrd_group = "{}.{}".format("database", settings.PLATFORM_API_GROUP)
+__xrd_version = settings.DEFAULT_VERSION
+
+# @xrd
+schema PostgreSQL:
+    name: str
+    size: int
+```
+
+**Benefits:**
+- ✅ Consistent API group across all XRDs
+- ✅ Easy updates (change once, applies everywhere)
+- ✅ Reduced duplication
+- ✅ Type-safe with KCL validation
+
+**3. Use variable references for dynamic configuration:**
+
+```kcl
+import base.settings
+
+# Define per-resource configuration
+_subgroup = "storage"
+_resourceType = "S3Bucket"
+
+# Use in metadata
+__xrd_kind = _resourceType
+__xrd_group = "{}.{}".format(_subgroup, settings.PLATFORM_API_GROUP)
+
+# @xrd
+schema S3Bucket:
+    name: str
+```
+
+This pattern makes it easy to generate multiple related XRDs with consistent naming conventions.
+
 ## Examples
 
 See [`examples/`](examples/) directory:
@@ -323,6 +613,7 @@ See [`examples/`](examples/) directory:
 3. **nested-schema.k** - Nested schema references
 4. **dynatrace-with-metadata.k** - Full in-file metadata
 5. **preserve-unknown-fields.k** - Arbitrary properties with `{any:any}`
+6. **s3-bucket-with-policy.k** - Complex example with `any` type fields and IAM policies
 
 ## Development
 

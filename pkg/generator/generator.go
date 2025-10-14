@@ -56,6 +56,7 @@ type ClaimNames struct {
 type XRDOptions struct {
 	Group          string
 	Version        string
+	Kind           string // Override the XRD kind (if empty, uses schema name)
 	WithClaims     bool
 	ClaimKind      string
 	ClaimPlural    string
@@ -132,34 +133,38 @@ func GenerateXRDWithOptions(schema *parser.Schema, opts XRDOptions) (string, err
 
 // GenerateXRDWithSchemasAndOptions generates a Crossplane XRD with schema resolution for nested types
 func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]*parser.Schema, opts XRDOptions) (string, error) {
-	// Convert schema name to lowercase plural for the resource name
-	plural := strings.ToLower(schema.Name) + "s"
+	// Determine the base name for the XRD
+	// If Kind is specified in options, use it; otherwise use schema name
+	baseName := schema.Name
+	if opts.Kind != "" {
+		baseName = opts.Kind
+	}
+	
+	// Convert base name to lowercase plural for the resource name
+	plural := strings.ToLower(baseName) + "s"
 	// Determine names based on claims mode
 	var xrdKind, xrdPlural string
 	var claimKind, claimPlural string
 	
 	if opts.WithClaims {
-		// When using claims, the XRD kind should have X prefix
-		// and the claim kind is the original name (without X prefix)
+		// When using claims, __xrd_kind should be the unprefixed name
+		// XRD gets X prefix, claims use the original unprefixed name
 		
-		// XRD kind should have X prefix
-		if strings.HasPrefix(schema.Name, "X") {
-			xrdKind = schema.Name // Already has X prefix
-			// Claim kind is schema name without X
-			if opts.ClaimKind == "" {
-				claimKind = strings.TrimPrefix(schema.Name, "X")
-			} else {
-				claimKind = opts.ClaimKind
-			}
+		// Always treat baseName as unprefixed when using claims
+		// Strip X prefix if it was provided for backward compatibility
+		unprefixedName := baseName
+		if strings.HasPrefix(baseName, "X") {
+			unprefixedName = strings.TrimPrefix(baseName, "X")
+		}
+		
+		// XRD kind gets X prefix
+		xrdKind = "X" + unprefixedName
+		
+		// Claim kind is the unprefixed name
+		if opts.ClaimKind == "" {
+			claimKind = unprefixedName
 		} else {
-			// Schema name doesn't have X, so add it for XRD
-			xrdKind = "X" + schema.Name
-			// Claim kind is the original schema name
-			if opts.ClaimKind == "" {
-				claimKind = schema.Name
-			} else {
-				claimKind = opts.ClaimKind
-			}
+			claimKind = opts.ClaimKind
 		}
 		
 		// Generate plurals
@@ -170,8 +175,8 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 			claimPlural = opts.ClaimPlural
 		}
 	} else {
-		// Without claims, use schema name as-is for XRD
-		xrdKind = schema.Name
+		// Without claims, use base name as-is for XRD
+		xrdKind = baseName
 		xrdPlural = plural
 	}
 	
@@ -267,6 +272,13 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 
 	// Map KCL types to OpenAPI types
 	switch {
+	case field.Type == "any":
+		// 'any' type should not have a type specified, only preserve unknown fields
+		// Don't set schema.Type
+		if field.PreserveUnknownFields {
+			preserve := true
+			schema.XKubernetesPreserveUnknownFields = &preserve
+		}
 	case field.Type == "str":
 		schema.Type = "string"
 	case field.Type == "int":

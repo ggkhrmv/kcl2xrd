@@ -241,3 +241,194 @@ schema MainSchema:
 		t.Errorf("Expected nested field type 'NestedSchema', got '%s'", mainSchema.Fields[0].Type)
 	}
 }
+
+func TestParseKCLFileWithModuleLevelVariables(t *testing.T) {
+	// Test that non-indented module-level variables after schemas don't get parsed as fields
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.k")
+	
+	content := `schema BucketPolicyStatement:
+    # @enum(["Allow", "Deny"])
+    effect?: str
+    # @preserveUnknownFields
+    principal?: any
+    # @preserveUnknownFields
+    action?: any
+
+_xrSubgroup = "aws"
+
+_composition: schemas.Composition{
+    xrKind: "Test"
+}
+`
+	
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	
+	result, err := ParseKCLFileWithSchemas(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+	}
+	
+	schema := result.Schemas["BucketPolicyStatement"]
+	if schema == nil {
+		t.Fatal("Expected BucketPolicyStatement schema to be parsed")
+	}
+	
+	// Should have exactly 3 fields (effect, principal, action)
+	if len(schema.Fields) != 3 {
+		t.Errorf("Expected 3 fields, got %d", len(schema.Fields))
+		for i, field := range schema.Fields {
+			t.Logf("Field %d: %s (%s)", i, field.Name, field.Type)
+		}
+	}
+	
+	// Verify we don't have _xrSubgroup or _composition fields
+	for _, field := range schema.Fields {
+		if field.Name == "_xrSubgroup" || field.Name == "_composition" || 
+		   field.Name == "xrKind" || field.Name == "selector" {
+			t.Errorf("Field '%s' should not be part of schema - module-level variables should not be parsed as fields", field.Name)
+		}
+	}
+}
+
+func TestParseKCLFileWithGroupExpression(t *testing.T) {
+	// Test that __xrd_group with format expressions can be resolved
+	tempDir := t.TempDir()
+	
+	t.Run("resolvable_format_expression", func(t *testing.T) {
+		testFile := filepath.Join(tempDir, "test1.k")
+		content := `_xrSubgroup = "aws"
+_platformGroup = "example.org"
+
+__xrd_kind = "Bucket"
+__xrd_group = "{}.{}".format(_xrSubgroup, _platformGroup)
+__xrd_version = "v1alpha1"
+
+schema Bucket:
+    name: str
+`
+		
+		if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+		
+		result, err := ParseKCLFileWithSchemas(testFile)
+		if err != nil {
+			t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+		}
+		
+		// Group should be resolved from the format expression
+		expected := "aws.example.org"
+		if result.Metadata.Group != expected {
+			t.Errorf("Expected Group '%s', got '%s'", expected, result.Metadata.Group)
+		}
+		
+		// XRKind and XRVersion should also be parsed
+		if result.Metadata.XRKind != "Bucket" {
+			t.Errorf("Expected XRKind 'Bucket', got '%s'", result.Metadata.XRKind)
+		}
+		if result.Metadata.XRVersion != "v1alpha1" {
+			t.Errorf("Expected XRVersion 'v1alpha1', got '%s'", result.Metadata.XRVersion)
+		}
+	})
+	
+	t.Run("unresolvable_format_expression", func(t *testing.T) {
+		testFile := filepath.Join(tempDir, "test2.k")
+		content := `__xrd_kind = "Bucket"
+__xrd_group = "{}.{}".format(_xrSubgroup, settings.PLATFORM_API_GROUP)
+__xrd_version = "v1alpha1"
+
+schema Bucket:
+    name: str
+`
+		
+		if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+		
+		result, err := ParseKCLFileWithSchemas(testFile)
+		if err != nil {
+			t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+		}
+		
+		// Group should be empty since variables are not defined
+		if result.Metadata.Group != "" {
+			t.Errorf("Expected Group to be empty for unresolvable expression, got '%s'", result.Metadata.Group)
+		}
+		
+		// But XRKind and XRVersion should be parsed
+		if result.Metadata.XRKind != "Bucket" {
+			t.Errorf("Expected XRKind 'Bucket', got '%s'", result.Metadata.XRKind)
+		}
+		if result.Metadata.XRVersion != "v1alpha1" {
+			t.Errorf("Expected XRVersion 'v1alpha1', got '%s'", result.Metadata.XRVersion)
+		}
+	})
+}
+
+func TestParseKCLFileWithAnyType(t *testing.T) {
+	// Test that fields with 'any' type are properly parsed
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.k")
+	
+	content := `schema TestSchema:
+    # @preserveUnknownFields
+    # Description for principal
+    principal?: any
+    
+    # @preserveUnknownFields
+    # Description for action
+    action?: any
+    
+    name: str
+`
+	
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	
+	result, err := ParseKCLFileWithSchemas(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+	}
+	
+	schema := result.Schemas["TestSchema"]
+	if schema == nil {
+		t.Fatal("Expected TestSchema to be parsed")
+	}
+	
+	// Check principal field
+	if len(schema.Fields) < 1 {
+		t.Fatal("Expected at least 1 field")
+	}
+	principalField := schema.Fields[0]
+	if principalField.Name != "principal" {
+		t.Errorf("Expected field name 'principal', got '%s'", principalField.Name)
+	}
+	if principalField.Type != "any" {
+		t.Errorf("Expected type 'any', got '%s'", principalField.Type)
+	}
+	if !principalField.PreserveUnknownFields {
+		t.Error("Expected PreserveUnknownFields to be true")
+	}
+	if principalField.Description == "" {
+		t.Error("Expected description to be set")
+	}
+	
+	// Check action field
+	if len(schema.Fields) < 2 {
+		t.Fatal("Expected at least 2 fields")
+	}
+	actionField := schema.Fields[1]
+	if actionField.Name != "action" {
+		t.Errorf("Expected field name 'action', got '%s'", actionField.Name)
+	}
+	if actionField.Type != "any" {
+		t.Errorf("Expected type 'any', got '%s'", actionField.Type)
+	}
+	if !actionField.PreserveUnknownFields {
+		t.Error("Expected PreserveUnknownFields to be true")
+	}
+}
