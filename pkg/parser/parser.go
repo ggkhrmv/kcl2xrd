@@ -587,31 +587,36 @@ func resolveFormatExpression(line string, variables map[string]string) string {
 func evaluateMetadataWithKCL(filename string) (*XRDMetadata, error) {
 	metadata := &XRDMetadata{}
 	
-	// Read the file content
-	content, err := os.ReadFile(filename)
+	// First, try to run KCL with the file as-is (with imports)
+	// This allows imports to work when they can be resolved
+	result, err := kcl.RunFiles([]string{filename}, kcl.WithShowHidden(true))
 	if err != nil {
-		return metadata, nil
-	}
-	
-	// Create a temporary version without import statements for metadata evaluation
-	// This prevents import errors from breaking metadata evaluation
-	lines := strings.Split(string(content), "\n")
-	var filteredLines []string
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		// Skip import statements
-		if strings.HasPrefix(trimmed, "import ") {
-			continue
+		// If evaluation failed (possibly due to unresolvable imports),
+		// try again with imports filtered out
+		content, readErr := os.ReadFile(filename)
+		if readErr != nil {
+			return metadata, nil
 		}
-		filteredLines = append(filteredLines, line)
-	}
-	filteredContent := strings.Join(filteredLines, "\n")
-	
-	// Run KCL with the filtered content and ShowHidden option to include variables starting with _
-	result, err := kcl.Run("", kcl.WithCode(filteredContent), kcl.WithShowHidden(true))
-	if err != nil {
-		// If KCL evaluation fails, return empty metadata (will fall back to manual parsing)
-		return metadata, nil
+		
+		// Filter out import statements
+		lines := strings.Split(string(content), "\n")
+		var filteredLines []string
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			// Skip import statements
+			if strings.HasPrefix(trimmed, "import ") {
+				continue
+			}
+			filteredLines = append(filteredLines, line)
+		}
+		filteredContent := strings.Join(filteredLines, "\n")
+		
+		// Try running without imports
+		result, err = kcl.Run("", kcl.WithCode(filteredContent), kcl.WithShowHidden(true))
+		if err != nil {
+			// If it still fails, return empty metadata (will fall back to manual parsing)
+			return metadata, nil
+		}
 	}
 	
 	// Extract metadata variables from the result
