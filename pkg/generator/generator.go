@@ -94,6 +94,7 @@ type PropertySchema struct {
 	Properties  map[string]PropertySchema `yaml:"properties,omitempty"`
 	Required    []string                  `yaml:"required,omitempty"`
 	Items       *PropertySchema           `yaml:"items,omitempty"`
+	AdditionalProperties *PropertySchema   `yaml:"additionalProperties,omitempty"`
 	Format      string                    `yaml:"format,omitempty"`
 	Default     interface{}               `yaml:"default,omitempty"`
 	// Validation fields
@@ -309,14 +310,22 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 			schema.Items = &elementSchema
 		}
 	case strings.HasPrefix(field.Type, "{") && strings.Contains(field.Type, ":"):
-		// Map/dict type: {str: str} or {any:any}
+		// Map/dict type: {K:V} - maps to OpenAPI object with additionalProperties
 		schema.Type = "object"
 		
-		// Check for {any:any} pattern - object with arbitrary properties
-		if strings.TrimSpace(strings.Trim(field.Type, "{}")) == "any:any" {
-			// Object with arbitrary properties
-			// Apply preserve unknown fields if annotation is present
-			if field.PreserveUnknownFields {
+		// Parse the key:value types from {K:V} syntax
+		mapContent := strings.TrimSpace(strings.Trim(field.Type, "{}"))
+		parts := strings.SplitN(mapContent, ":", 2)
+		if len(parts) == 2 {
+			// keyType := strings.TrimSpace(parts[0])  // Not used in OpenAPI - maps always have string keys
+			valueType := strings.TrimSpace(parts[1])
+			
+			// Create the additionalProperties schema based on the value type
+			valueSchema := convertFieldToPropertySchemaWithSchemas(parser.Field{Type: valueType}, schemas)
+			schema.AdditionalProperties = &valueSchema
+			
+			// Special handling for {any:any} - apply preserve unknown fields if annotation is present
+			if mapContent == "any:any" && field.PreserveUnknownFields {
 				preserve := true
 				schema.XKubernetesPreserveUnknownFields = &preserve
 			}

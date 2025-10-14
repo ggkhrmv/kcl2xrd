@@ -362,3 +362,141 @@ func TestGenerateXRDWithAnyTypeFields(t *testing.T) {
 		t.Errorf("Expected type 'string' for name field, got '%v'", name["type"])
 	}
 }
+
+func TestConvertFieldWithMapTypes(t *testing.T) {
+	tests := []struct {
+		name              string
+		field             parser.Field
+		expectedType      string
+		expectedValueType string
+	}{
+		{
+			name:              "string to string map",
+			field:             parser.Field{Name: "labels", Type: "{str:str}"},
+			expectedType:      "object",
+			expectedValueType: "string",
+		},
+		{
+			name:              "string to int map",
+			field:             parser.Field{Name: "counts", Type: "{str:int}"},
+			expectedType:      "object",
+			expectedValueType: "integer",
+		},
+		{
+			name:              "string to bool map",
+			field:             parser.Field{Name: "flags", Type: "{str:bool}"},
+			expectedType:      "object",
+			expectedValueType: "boolean",
+		},
+		{
+			name:              "string to float map",
+			field:             parser.Field{Name: "metrics", Type: "{str:float}"},
+			expectedType:      "object",
+			expectedValueType: "number",
+		},
+		{
+			name:              "any to any map",
+			field:             parser.Field{Name: "config", Type: "{any:any}"},
+			expectedType:      "object",
+			expectedValueType: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			schema := convertFieldToPropertySchema(tt.field)
+
+			if schema.Type != tt.expectedType {
+				t.Errorf("Expected type '%s', got '%s'", tt.expectedType, schema.Type)
+			}
+
+			if schema.AdditionalProperties == nil {
+				t.Error("Expected additionalProperties to be set for map type")
+				return
+			}
+
+			if tt.expectedValueType == "" {
+				// For {any:any}, additionalProperties should be an empty schema (allowing any type)
+				if schema.AdditionalProperties.Type != "" {
+					t.Errorf("Expected empty additionalProperties type for {any:any}, got '%s'", schema.AdditionalProperties.Type)
+				}
+			} else {
+				if schema.AdditionalProperties.Type != tt.expectedValueType {
+					t.Errorf("Expected additionalProperties type '%s', got '%s'", tt.expectedValueType, schema.AdditionalProperties.Type)
+				}
+			}
+		})
+	}
+}
+
+func TestGenerateXRDWithMapTypes(t *testing.T) {
+	schema := &parser.Schema{
+		Name: "TestMapSchema",
+		Fields: []parser.Field{
+			{
+				Name:        "labels",
+				Type:        "{str:str}",
+				Required:    true,
+				Description: "String to string map",
+			},
+			{
+				Name:        "counts",
+				Type:        "{str:int}",
+				Required:    false,
+				Description: "String to int map",
+			},
+		},
+	}
+
+	xrdYAML, err := GenerateXRD(schema, "example.org", "v1alpha1")
+	if err != nil {
+		t.Fatalf("GenerateXRD failed: %v", err)
+	}
+
+	// Parse the YAML
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Generated XRD is not valid YAML: %v", err)
+	}
+
+	// Navigate to parameters properties
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	versionSchema := version["schema"].(map[string]interface{})
+	openAPISchema := versionSchema["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPISchema["properties"].(map[string]interface{})
+	specProp := properties["spec"].(map[string]interface{})
+	specProps := specProp["properties"].(map[string]interface{})
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+
+	// Check labels field
+	labels := paramProps["labels"].(map[string]interface{})
+	if labels["type"] != "object" {
+		t.Errorf("Expected type 'object' for labels, got '%v'", labels["type"])
+	}
+	if labels["additionalProperties"] == nil {
+		t.Error("Expected additionalProperties to be set for labels")
+	} else {
+		additionalProps := labels["additionalProperties"].(map[string]interface{})
+		if additionalProps["type"] != "string" {
+			t.Errorf("Expected additionalProperties type 'string' for labels, got '%v'", additionalProps["type"])
+		}
+	}
+
+	// Check counts field
+	counts := paramProps["counts"].(map[string]interface{})
+	if counts["type"] != "object" {
+		t.Errorf("Expected type 'object' for counts, got '%v'", counts["type"])
+	}
+	if counts["additionalProperties"] == nil {
+		t.Error("Expected additionalProperties to be set for counts")
+	} else {
+		additionalProps := counts["additionalProperties"].(map[string]interface{})
+		if additionalProps["type"] != "integer" {
+			t.Errorf("Expected additionalProperties type 'integer' for counts, got '%v'", additionalProps["type"])
+		}
+	}
+}
+

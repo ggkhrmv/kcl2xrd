@@ -142,16 +142,23 @@ kcl2xrd -i database.k --with-claims -o output.yaml
 
 ## Type Mappings
 
-| KCL Type | OpenAPI Type | Example |
-|----------|---------------|---------|
-| `str` | `string` | `name: str` |
-| `int` | `integer` | `count: int` |
-| `float` | `number` | `price: float` |
-| `bool` | `boolean` | `enabled: bool` |
-| `any` | (no type) + `x-kubernetes-preserve-unknown-fields` | `principal?: any` |
-| `[T]` | `array` | `tags: [str]` |
-| `{K:V}` | `object` | `labels: {str:str}` |
-| `{any:any}` | `object` + `x-kubernetes-preserve-unknown-fields` | `config: {any:any}` |
+| KCL Type | OpenAPI Type | CEL Type | Example |
+|----------|---------------|----------|---------|
+| `str` | `string` | `string` | `name: str` |
+| `int` | `integer` | `int` | `count: int` |
+| `float` | `number` | `double` | `price: float` |
+| `bool` | `boolean` | `bool` | `enabled: bool` |
+| `any` | (no type) + `x-kubernetes-preserve-unknown-fields` | `dynamic` | `principal?: any` |
+| `[T]` | `array` with `items` | `list` | `tags: [str]` |
+| `{K:V}` | `object` with `additionalProperties` | `map` | `labels: {str:str}` |
+| `{any:any}` | `object` with `additionalProperties: {}` | `map` | `config: {any:any}` |
+
+**Map Types:** KCL map types like `{str:str}`, `{str:int}`, etc. are converted to OpenAPI `object` type with `additionalProperties` schema. The `additionalProperties` field specifies the type of the map values:
+- `{str:str}` → `type: object` with `additionalProperties: { type: string }`
+- `{str:int}` → `type: object` with `additionalProperties: { type: integer }`
+- `{any:any}` → `type: object` with `additionalProperties: {}` (allows any value type)
+
+This mapping ensures that CEL validations can properly recognize these fields as `map` types, enabling CEL expressions like `self.labels.size()` or `self.config['key']`.
 
 **Note:** The `any` type is particularly useful for fields that can accept arbitrary JSON/YAML data (like AWS IAM policy principals, actions, etc.). When using `any` type with `@preserveUnknownFields` annotation, the field will not have a type constraint, allowing maximum flexibility.
 
