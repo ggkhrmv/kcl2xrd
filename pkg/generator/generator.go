@@ -147,27 +147,24 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 	var claimKind, claimPlural string
 	
 	if opts.WithClaims {
-		// When using claims, the XRD kind should have X prefix
-		// and the claim kind is the original name (without X prefix)
+		// When using claims, __xrd_kind should be the unprefixed name
+		// XRD gets X prefix, claims use the original unprefixed name
 		
-		// XRD kind should have X prefix
+		// Always treat baseName as unprefixed when using claims
+		// Strip X prefix if it was provided for backward compatibility
+		unprefixedName := baseName
 		if strings.HasPrefix(baseName, "X") {
-			xrdKind = baseName // Already has X prefix
-			// Claim kind is base name without X
-			if opts.ClaimKind == "" {
-				claimKind = strings.TrimPrefix(baseName, "X")
-			} else {
-				claimKind = opts.ClaimKind
-			}
+			unprefixedName = strings.TrimPrefix(baseName, "X")
+		}
+		
+		// XRD kind gets X prefix
+		xrdKind = "X" + unprefixedName
+		
+		// Claim kind is the unprefixed name
+		if opts.ClaimKind == "" {
+			claimKind = unprefixedName
 		} else {
-			// Base name doesn't have X, so add it for XRD
-			xrdKind = "X" + baseName
-			// Claim kind is the original base name
-			if opts.ClaimKind == "" {
-				claimKind = baseName
-			} else {
-				claimKind = opts.ClaimKind
-			}
+			claimKind = opts.ClaimKind
 		}
 		
 		// Generate plurals
