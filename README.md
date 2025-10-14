@@ -299,20 +299,42 @@ schema ValidatedResource:
 Define in your KCL file with `__xrd_` prefix:
 
 - `__xrd_kind` - Schema to convert (string literal)
-- `__xrd_group` - API group (string literal or expression)
+- `__xrd_group` - API group (string literal or format expression)
 - `__xrd_version` - API version (default: v1alpha1)
 - `__xrd_categories` - Categories list
 - `__xrd_served` - Served flag (True/False)
 - `__xrd_referenceable` - Referenceable flag (True/False)
 - `__xrd_printer_columns` - Printer columns list
 
-**Note on `__xrd_group`:** When using string literals (e.g., `__xrd_group = "example.org"`), the value is extracted automatically. When using expressions or format strings (e.g., `__xrd_group = "{}.{}".format(subgroup, domain)`), you must provide the `--group` flag via CLI.
+**Note on `__xrd_group`:** 
+- String literals (e.g., `__xrd_group = "example.org"`) are extracted automatically
+- Format expressions (e.g., `__xrd_group = "{}.{}".format(var1, var2)`) are automatically resolved if all variables are defined in the file
+- If format expressions cannot be resolved (e.g., using undefined variables or property access like `settings.API_GROUP`), you must provide the `--group` flag via CLI
 
-### Example with Expressions
+### Example with Format Expressions
 
 ```kcl
-# Variables that can't be evaluated
+# Define variables
 _xrSubgroup = "aws"
+_platformGroup = "mycorp.io"
+
+# Use format expression - will be automatically resolved to "aws.mycorp.io"
+__xrd_group = "{}.{}".format(_xrSubgroup, _platformGroup)
+
+# @xrd
+schema Bucket:
+    name: str
+```
+
+```bash
+# No --group flag needed - format expression is automatically resolved
+kcl2xrd -i bucket.k -o bucket.yaml
+```
+
+### Example with Unresolvable Expressions
+
+```kcl
+# Variable uses property access - cannot be resolved by parser
 __xrd_group = "{}.{}".format(_xrSubgroup, settings.PLATFORM_API_GROUP)
 
 # @xrd
@@ -321,7 +343,7 @@ schema Bucket:
 ```
 
 ```bash
-# Must provide --group flag when __xrd_group is an expression
+# Must provide --group flag when expression cannot be resolved
 kcl2xrd -i bucket.k --group aws.platform.example.com -o bucket.yaml
 ```
 

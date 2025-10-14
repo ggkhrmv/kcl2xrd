@@ -132,6 +132,11 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	
 	var pendingAnnotations []string
 	var pendingComments []string
+	
+	// Track variable assignments for resolving expressions
+	variables := make(map[string]string)
+	// Regex for simple variable assignments like: _xrSubgroup = "aws"
+	varAssignRegex := regexp.MustCompile(`^\s*(_\w+)\s*=\s*['"](.*?)['"]\s*$`)
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -148,6 +153,13 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 		
 		// Parse metadata variables (before schema definitions)
 		if !inSchema {
+			// Track variable assignments for later resolution
+			if matches := varAssignRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
+				varName := matches[1]
+				varValue := matches[2]
+				variables[varName] = varValue
+			}
+			
 			if matches := xrKindRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
 				metadata.XRKind = matches[1]
 				continue
@@ -160,11 +172,13 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				metadata.Group = matches[1]
 				continue
 			}
-			// If __xrd_group doesn't match the simple pattern, check for expression pattern
-			// In this case, we just skip it and user must provide group via CLI flag
+			// If __xrd_group doesn't match the simple pattern, try to resolve format expressions
 			if groupExprRegex.MatchString(trimmedLine) && !groupRegex.MatchString(trimmedLine) {
-				// __xrd_group is an expression (like format string), skip it
-				// User will need to provide --group flag
+				// Try to resolve format expressions like: "{}.{}".format(var1, var2)
+				if resolvedGroup := resolveFormatExpression(trimmedLine, variables); resolvedGroup != "" {
+					metadata.Group = resolvedGroup
+				}
+				// If resolution failed, user will need to provide --group flag
 				continue
 			}
 			if matches := categoriesRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
@@ -489,6 +503,54 @@ func splitPrinterColumns(s string) []string {
 	trimmed = strings.Trim(trimmed, `"'`)
 	if trimmed != "" {
 		result = append(result, trimmed)
+	}
+	
+	return result
+}
+
+// resolveFormatExpression attempts to resolve KCL format expressions like:
+// __xrd_group = "{}.{}".format(_xrSubgroup, _platformGroup)
+// Returns the resolved string if successful, empty string otherwise
+func resolveFormatExpression(line string, variables map[string]string) string {
+	// Pattern to match: __xrd_group = "format_string".format(var1, var2, ...)
+	formatRegex := regexp.MustCompile(`^\s*__xrd_group\s*=\s*["'](.*?)["']\.format\((.*?)\)\s*$`)
+	matches := formatRegex.FindStringSubmatch(line)
+	if len(matches) < 3 {
+		return ""
+	}
+	
+	formatStr := matches[1]
+	argsStr := matches[2]
+	
+	// Parse the arguments
+	args := strings.Split(argsStr, ",")
+	var resolvedArgs []string
+	
+	for _, arg := range args {
+		arg = strings.TrimSpace(arg)
+		// Remove leading/trailing quotes if present
+		arg = strings.Trim(arg, `"'`)
+		
+		// Look up variable value
+		if val, exists := variables[arg]; exists {
+			resolvedArgs = append(resolvedArgs, val)
+		} else {
+			// Variable not found - cannot resolve this expression
+			// This includes cases like settings.PLATFORM_API_GROUP which aren't simple variables
+			return ""
+		}
+	}
+	
+	// Replace {} placeholders with actual values
+	result := formatStr
+	for _, val := range resolvedArgs {
+		result = strings.Replace(result, "{}", val, 1)
+	}
+	
+	// Check if all placeholders were replaced
+	if strings.Contains(result, "{}") {
+		// Still has unreplaced placeholders
+		return ""
 	}
 	
 	return result

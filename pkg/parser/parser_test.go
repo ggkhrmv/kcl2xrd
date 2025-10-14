@@ -294,39 +294,78 @@ _composition: schemas.Composition{
 }
 
 func TestParseKCLFileWithGroupExpression(t *testing.T) {
-	// Test that __xrd_group with expressions (not simple strings) are skipped
+	// Test that __xrd_group with format expressions can be resolved
 	tempDir := t.TempDir()
-	testFile := filepath.Join(tempDir, "test.k")
 	
-	content := `__xrd_kind = "Bucket"
+	t.Run("resolvable_format_expression", func(t *testing.T) {
+		testFile := filepath.Join(tempDir, "test1.k")
+		content := `_xrSubgroup = "aws"
+_platformGroup = "example.org"
+
+__xrd_kind = "Bucket"
+__xrd_group = "{}.{}".format(_xrSubgroup, _platformGroup)
+__xrd_version = "v1alpha1"
+
+schema Bucket:
+    name: str
+`
+		
+		if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+		
+		result, err := ParseKCLFileWithSchemas(testFile)
+		if err != nil {
+			t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+		}
+		
+		// Group should be resolved from the format expression
+		expected := "aws.example.org"
+		if result.Metadata.Group != expected {
+			t.Errorf("Expected Group '%s', got '%s'", expected, result.Metadata.Group)
+		}
+		
+		// XRKind and XRVersion should also be parsed
+		if result.Metadata.XRKind != "Bucket" {
+			t.Errorf("Expected XRKind 'Bucket', got '%s'", result.Metadata.XRKind)
+		}
+		if result.Metadata.XRVersion != "v1alpha1" {
+			t.Errorf("Expected XRVersion 'v1alpha1', got '%s'", result.Metadata.XRVersion)
+		}
+	})
+	
+	t.Run("unresolvable_format_expression", func(t *testing.T) {
+		testFile := filepath.Join(tempDir, "test2.k")
+		content := `__xrd_kind = "Bucket"
 __xrd_group = "{}.{}".format(_xrSubgroup, settings.PLATFORM_API_GROUP)
 __xrd_version = "v1alpha1"
 
 schema Bucket:
     name: str
 `
-	
-	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-	
-	result, err := ParseKCLFileWithSchemas(testFile)
-	if err != nil {
-		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
-	}
-	
-	// Group should be empty since it's an expression
-	if result.Metadata.Group != "" {
-		t.Errorf("Expected Group to be empty for expression-based __xrd_group, got '%s'", result.Metadata.Group)
-	}
-	
-	// But XRKind and XRVersion should be parsed
-	if result.Metadata.XRKind != "Bucket" {
-		t.Errorf("Expected XRKind 'Bucket', got '%s'", result.Metadata.XRKind)
-	}
-	if result.Metadata.XRVersion != "v1alpha1" {
-		t.Errorf("Expected XRVersion 'v1alpha1', got '%s'", result.Metadata.XRVersion)
-	}
+		
+		if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+		
+		result, err := ParseKCLFileWithSchemas(testFile)
+		if err != nil {
+			t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+		}
+		
+		// Group should be empty since variables are not defined
+		if result.Metadata.Group != "" {
+			t.Errorf("Expected Group to be empty for unresolvable expression, got '%s'", result.Metadata.Group)
+		}
+		
+		// But XRKind and XRVersion should be parsed
+		if result.Metadata.XRKind != "Bucket" {
+			t.Errorf("Expected XRKind 'Bucket', got '%s'", result.Metadata.XRKind)
+		}
+		if result.Metadata.XRVersion != "v1alpha1" {
+			t.Errorf("Expected XRVersion 'v1alpha1', got '%s'", result.Metadata.XRVersion)
+		}
+	})
 }
 
 func TestParseKCLFileWithAnyType(t *testing.T) {
