@@ -127,9 +127,12 @@ kcl2xrd -i xdatabase.k -g db.example.org --with-claims -o output.yaml
 | `int` | `integer` | `count: int` |
 | `float` | `number` | `price: float` |
 | `bool` | `boolean` | `enabled: bool` |
+| `any` | (no type) + `x-kubernetes-preserve-unknown-fields` | `principal?: any` |
 | `[T]` | `array` | `tags: [str]` |
 | `{K:V}` | `object` | `labels: {str:str}` |
 | `{any:any}` | `object` + `x-kubernetes-preserve-unknown-fields` | `config: {any:any}` |
+
+**Note:** The `any` type is particularly useful for fields that can accept arbitrary JSON/YAML data (like AWS IAM policy principals, actions, etc.). When using `any` type with `@preserveUnknownFields` annotation, the field will not have a type constraint, allowing maximum flexibility.
 
 ## Annotations Reference
 
@@ -295,13 +298,32 @@ schema ValidatedResource:
 
 Define in your KCL file with `__xrd_` prefix:
 
-- `__xrd_kind` - Schema to convert
-- `__xrd_group` - API group
+- `__xrd_kind` - Schema to convert (string literal)
+- `__xrd_group` - API group (string literal or expression)
 - `__xrd_version` - API version (default: v1alpha1)
 - `__xrd_categories` - Categories list
 - `__xrd_served` - Served flag (True/False)
 - `__xrd_referenceable` - Referenceable flag (True/False)
 - `__xrd_printer_columns` - Printer columns list
+
+**Note on `__xrd_group`:** When using string literals (e.g., `__xrd_group = "example.org"`), the value is extracted automatically. When using expressions or format strings (e.g., `__xrd_group = "{}.{}".format(subgroup, domain)`), you must provide the `--group` flag via CLI.
+
+### Example with Expressions
+
+```kcl
+# Variables that can't be evaluated
+_xrSubgroup = "aws"
+__xrd_group = "{}.{}".format(_xrSubgroup, settings.PLATFORM_API_GROUP)
+
+# @xrd
+schema Bucket:
+    name: str
+```
+
+```bash
+# Must provide --group flag when __xrd_group is an expression
+kcl2xrd -i bucket.k --group aws.platform.example.com -o bucket.yaml
+```
 
 ## CLI Options
 
@@ -314,6 +336,46 @@ Define in your KCL file with `__xrd_` prefix:
 - `--categories`: Override categories
 - `--printer-columns`: Override printer columns
 
+## Best Practices
+
+### Working with Complex KCL Files
+
+When your KCL files contain both schema definitions and other code (like composition templates, module-level variables, etc.), follow these guidelines:
+
+1. **Use the `@xrd` annotation** to explicitly mark which schema should be converted:
+
+```kcl
+# Other code and imports
+import base.schemas as schemas
+
+# @xrd  <-- Mark the schema for conversion
+schema MyResource:
+    name: str
+    config?: any
+
+# Other module-level variables (these won't be parsed as schema fields)
+_composition: schemas.Composition{
+    xrKind: "MyResource"
+}
+```
+
+2. **Module-level variables after schemas are ignored**: The parser stops collecting schema fields when it encounters a non-indented line (module-level code). This ensures composition templates and other variables don't pollute your XRD schema.
+
+3. **Use `any` type for flexible fields**: For fields that need to accept arbitrary JSON/YAML structures (like IAM policies, custom configurations), use the `any` type with `@preserveUnknownFields`:
+
+```kcl
+schema PolicyStatement:
+    # @preserveUnknownFields
+    # Can be a string, array, or object
+    principal?: any
+    
+    # @preserveUnknownFields
+    # Can be a string, array, or object
+    action?: any
+```
+
+This generates fields without a `type` constraint, only with `x-kubernetes-preserve-unknown-fields: true`, allowing maximum flexibility.
+
 ## Examples
 
 See [`examples/`](examples/) directory:
@@ -323,6 +385,7 @@ See [`examples/`](examples/) directory:
 3. **nested-schema.k** - Nested schema references
 4. **dynatrace-with-metadata.k** - Full in-file metadata
 5. **preserve-unknown-fields.k** - Arbitrary properties with `{any:any}`
+6. **s3-bucket-with-policy.k** - Complex example with `any` type fields and IAM policies
 
 ## Development
 

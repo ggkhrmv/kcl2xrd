@@ -29,6 +29,7 @@ examples: build
 	./bin/kcl2xrd --input examples/kcl/nested-schema.k --group storage.example.org --output examples/xrd/nested-schema.yaml
 	./bin/kcl2xrd --input examples/kcl/dynatrace-with-metadata.k --output examples/xrd/dynatrace-with-metadata.yaml
 	./bin/kcl2xrd --input examples/kcl/preserve-unknown-fields.k --group config.example.org --output examples/xrd/preserve-unknown-fields.yaml
+	./bin/kcl2xrd --input examples/kcl/s3-bucket-with-policy.k --output examples/xrd/s3-bucket-with-policy.yaml
 
 # Format code
 fmt:

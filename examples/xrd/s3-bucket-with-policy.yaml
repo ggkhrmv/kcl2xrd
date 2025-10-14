@@ -1,0 +1,93 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: buckets.aws.example.org
+spec:
+  group: aws.example.org
+  names:
+    kind: Bucket
+    plural: buckets
+  categories:
+    - aws
+    - storage
+    - s3
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      description: The name of the S3 Bucket
+                      pattern: ^[a-z0-9][a-z0-9-]*[a-z0-9]$
+                      minLength: 3
+                      maxLength: 63
+                    policy:
+                      type: object
+                      description: The bucket policy in structured format
+                      properties:
+                        statement:
+                          type: array
+                          description: List of policy statements
+                          items:
+                            type: object
+                            properties:
+                              action:
+                                description: |-
+                                  Action(s) that the policy allows/denies
+                                  Can be a string or array
+                                x-kubernetes-preserve-unknown-fields: true
+                              condition:
+                                description: Conditions for when the policy is in effect
+                                x-kubernetes-preserve-unknown-fields: true
+                              effect:
+                                type: string
+                                description: Effect of the policy statement (Allow/Deny)
+                                enum:
+                                  - Allow
+                                  - Deny
+                              principal:
+                                description: |-
+                                  The principals this statement applies to
+                                  Can be a string, array, or object
+                                x-kubernetes-preserve-unknown-fields: true
+                              resource:
+                                description: |-
+                                  Resource(s) to which this policy applies
+                                  Can be a string or array
+                                x-kubernetes-preserve-unknown-fields: true
+                        version:
+                          type: string
+                          description: Policy version defaults to 2012-10-17 if not specified
+                          default: "2012-10-17"
+                      required:
+                        - statement
+                      x-kubernetes-preserve-unknown-fields: true
+                    region:
+                      type: string
+                      description: AWS region for the bucket
+                      default: us-east-1
+                      enum:
+                        - us-east-1
+                        - us-west-2
+                        - eu-west-1
+                        - eu-central-1
+                    versioned:
+                      type: boolean
+                      description: Whether versioning is enabled for the bucket
+                      default: false
+                  required:
+                    - name
+              required:
+                - parameters
+          required:
+            - spec
