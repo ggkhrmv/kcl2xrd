@@ -587,8 +587,28 @@ func resolveFormatExpression(line string, variables map[string]string) string {
 func evaluateMetadataWithKCL(filename string) (*XRDMetadata, error) {
 	metadata := &XRDMetadata{}
 	
-	// Run KCL with ShowHidden option to include variables starting with _
-	result, err := kcl.RunFiles([]string{filename}, kcl.WithShowHidden(true))
+	// Read the file content
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return metadata, nil
+	}
+	
+	// Create a temporary version without import statements for metadata evaluation
+	// This prevents import errors from breaking metadata evaluation
+	lines := strings.Split(string(content), "\n")
+	var filteredLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Skip import statements
+		if strings.HasPrefix(trimmed, "import ") {
+			continue
+		}
+		filteredLines = append(filteredLines, line)
+	}
+	filteredContent := strings.Join(filteredLines, "\n")
+	
+	// Run KCL with the filtered content and ShowHidden option to include variables starting with _
+	result, err := kcl.Run("", kcl.WithCode(filteredContent), kcl.WithShowHidden(true))
 	if err != nil {
 		// If KCL evaluation fails, return empty metadata (will fall back to manual parsing)
 		return metadata, nil
