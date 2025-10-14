@@ -56,6 +56,7 @@ type ClaimNames struct {
 type XRDOptions struct {
 	Group          string
 	Version        string
+	Kind           string // Override the XRD kind (if empty, uses schema name)
 	WithClaims     bool
 	ClaimKind      string
 	ClaimPlural    string
@@ -132,8 +133,15 @@ func GenerateXRDWithOptions(schema *parser.Schema, opts XRDOptions) (string, err
 
 // GenerateXRDWithSchemasAndOptions generates a Crossplane XRD with schema resolution for nested types
 func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]*parser.Schema, opts XRDOptions) (string, error) {
-	// Convert schema name to lowercase plural for the resource name
-	plural := strings.ToLower(schema.Name) + "s"
+	// Determine the base name for the XRD
+	// If Kind is specified in options, use it; otherwise use schema name
+	baseName := schema.Name
+	if opts.Kind != "" {
+		baseName = opts.Kind
+	}
+	
+	// Convert base name to lowercase plural for the resource name
+	plural := strings.ToLower(baseName) + "s"
 	// Determine names based on claims mode
 	var xrdKind, xrdPlural string
 	var claimKind, claimPlural string
@@ -143,20 +151,20 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 		// and the claim kind is the original name (without X prefix)
 		
 		// XRD kind should have X prefix
-		if strings.HasPrefix(schema.Name, "X") {
-			xrdKind = schema.Name // Already has X prefix
-			// Claim kind is schema name without X
+		if strings.HasPrefix(baseName, "X") {
+			xrdKind = baseName // Already has X prefix
+			// Claim kind is base name without X
 			if opts.ClaimKind == "" {
-				claimKind = strings.TrimPrefix(schema.Name, "X")
+				claimKind = strings.TrimPrefix(baseName, "X")
 			} else {
 				claimKind = opts.ClaimKind
 			}
 		} else {
-			// Schema name doesn't have X, so add it for XRD
-			xrdKind = "X" + schema.Name
-			// Claim kind is the original schema name
+			// Base name doesn't have X, so add it for XRD
+			xrdKind = "X" + baseName
+			// Claim kind is the original base name
 			if opts.ClaimKind == "" {
-				claimKind = schema.Name
+				claimKind = baseName
 			} else {
 				claimKind = opts.ClaimKind
 			}
@@ -170,8 +178,8 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 			claimPlural = opts.ClaimPlural
 		}
 	} else {
-		// Without claims, use schema name as-is for XRD
-		xrdKind = schema.Name
+		// Without claims, use base name as-is for XRD
+		xrdKind = baseName
 		xrdPlural = plural
 	}
 	

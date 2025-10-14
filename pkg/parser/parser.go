@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	kcl "kcl-lang.io/kcl-go"
 )
 
 // Schema represents a parsed KCL schema
@@ -84,6 +86,9 @@ func ParseKCLFile(filename string) (*Schema, error) {
 
 // ParseKCLFileWithSchemas parses a KCL schema file and returns all schemas
 func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
+	// First, try to evaluate metadata using KCL runtime for more flexibility
+	kclMetadata, _ := evaluateMetadataWithKCL(filename)
+	
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
@@ -357,6 +362,27 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	if primarySchema == nil {
 		return nil, fmt.Errorf("no schema found in file")
 	}
+	
+	// Merge KCL-evaluated metadata with manually parsed metadata
+	// KCL evaluation takes priority as it's more accurate
+	if kclMetadata.XRKind != "" {
+		metadata.XRKind = kclMetadata.XRKind
+	}
+	if kclMetadata.Group != "" {
+		metadata.Group = kclMetadata.Group
+	}
+	if kclMetadata.XRVersion != "" {
+		metadata.XRVersion = kclMetadata.XRVersion
+	}
+	if len(kclMetadata.Categories) > 0 {
+		metadata.Categories = kclMetadata.Categories
+	}
+	if kclMetadata.Served != nil {
+		metadata.Served = kclMetadata.Served
+	}
+	if kclMetadata.Referenceable != nil {
+		metadata.Referenceable = kclMetadata.Referenceable
+	}
 
 	return &ParseResult{
 		Schemas:  schemas,
@@ -554,4 +580,65 @@ func resolveFormatExpression(line string, variables map[string]string) string {
 	}
 	
 	return result
+}
+
+// evaluateMetadataWithKCL uses KCL runtime to evaluate metadata variables
+// This is more flexible than parsing format strings manually
+func evaluateMetadataWithKCL(filename string) (*XRDMetadata, error) {
+	metadata := &XRDMetadata{}
+	
+	// Run KCL and get the result
+	result, err := kcl.RunFiles([]string{filename})
+	if err != nil {
+		// If KCL evaluation fails, return empty metadata (will fall back to manual parsing)
+		return metadata, nil
+	}
+	
+	// Extract metadata variables from the result
+	kclResult := result.First()
+	if kclResult == nil {
+		return metadata, nil
+	}
+	
+	// Convert to map
+	resultMap, err := kclResult.ToMap()
+	if err != nil {
+		return metadata, nil
+	}
+	
+	// Try to extract __xrd_kind
+	if kind, ok := resultMap["__xrd_kind"].(string); ok {
+		metadata.XRKind = kind
+	}
+	
+	// Try to extract __xrd_group
+	if group, ok := resultMap["__xrd_group"].(string); ok {
+		metadata.Group = group
+	}
+	
+	// Try to extract __xrd_version
+	if version, ok := resultMap["__xrd_version"].(string); ok {
+		metadata.XRVersion = version
+	}
+	
+	// Try to extract __xrd_served
+	if served, ok := resultMap["__xrd_served"].(bool); ok {
+		metadata.Served = &served
+	}
+	
+	// Try to extract __xrd_referenceable
+	if referenceable, ok := resultMap["__xrd_referenceable"].(bool); ok {
+		metadata.Referenceable = &referenceable
+	}
+	
+	// Try to extract __xrd_categories
+	if categories, ok := resultMap["__xrd_categories"].([]interface{}); ok {
+		for _, cat := range categories {
+			if catStr, ok := cat.(string); ok {
+				metadata.Categories = append(metadata.Categories, catStr)
+			}
+		}
+	}
+	
+	return metadata, nil
 }

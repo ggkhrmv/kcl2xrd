@@ -86,12 +86,6 @@ func run(cmd *cobra.Command, args []string) error {
 		if xrdSchema != nil {
 			// Use the schema marked with @xrd
 			selectedSchema = xrdSchema
-		} else if result.Metadata != nil && result.Metadata.XRKind != "" {
-			// Use __xrd_kind from metadata if specified
-			if result.Schemas[result.Metadata.XRKind] == nil {
-				return fmt.Errorf("schema '%s' (from __xrd_kind) not found in file. Available schemas: %v", result.Metadata.XRKind, getSchemaNames(result.Schemas))
-			}
-			selectedSchema = result.Schemas[result.Metadata.XRKind]
 		} else {
 			// Use the primary (last) schema
 			selectedSchema = result.Primary
@@ -132,6 +126,7 @@ func run(cmd *cobra.Command, args []string) error {
 	opts := generator.XRDOptions{
 		Group:          group,
 		Version:        version,
+		Kind:           "", // Will be set below if __xrd_kind is specified
 		WithClaims:     withClaims,
 		ClaimKind:      claimKind,
 		ClaimPlural:    claimPlural,
@@ -139,6 +134,11 @@ func run(cmd *cobra.Command, args []string) error {
 		Referenceable:  referenceable,
 		Categories:     categories,
 		PrinterColumns: parsePrinterColumns(printerColumns),
+	}
+	
+	// If __xrd_kind is specified in metadata, use it as the XRD kind
+	if result.Metadata != nil && result.Metadata.XRKind != "" {
+		opts.Kind = result.Metadata.XRKind
 	}
 
 	// Generate XRD with schema resolution

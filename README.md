@@ -308,8 +308,14 @@ Define in your KCL file with `__xrd_` prefix:
 
 **Note on `__xrd_group`:** 
 - String literals (e.g., `__xrd_group = "example.org"`) are extracted automatically
-- Format expressions (e.g., `__xrd_group = "{}.{}".format(var1, var2)`) are automatically resolved if all variables are defined in the file
-- If format expressions cannot be resolved (e.g., using undefined variables or property access like `settings.API_GROUP`), you must provide the `--group` flag via CLI
+- Format expressions and any KCL expressions (e.g., `__xrd_group = "{}.{}".format(var1, var2)` or `__xrd_group = "{}.{}".format(_xrSubgroup, settings.PLATFORM_API_GROUP)`) are automatically evaluated using the KCL runtime
+- This provides maximum flexibility - you can use any valid KCL expression to compute the group
+
+**Note on `__xrd_kind`:**
+- Specifies the `spec.names.kind` for the XRD (e.g., `"XBucket"`, `"Database"`)
+- The XRD `metadata.name` will use the plural of this kind (e.g., `"xbuckets.group"`, `"databases.group"`)
+- If not specified, defaults to the schema name
+- Useful when you want the XRD kind to differ from the schema name
 
 ### Example with Format Expressions
 
@@ -318,7 +324,8 @@ Define in your KCL file with `__xrd_` prefix:
 _xrSubgroup = "aws"
 _platformGroup = "mycorp.io"
 
-# Use format expression - will be automatically resolved to "aws.mycorp.io"
+# Use format expression - automatically evaluated by KCL
+__xrd_kind = "XBucket"
 __xrd_group = "{}.{}".format(_xrSubgroup, _platformGroup)
 
 # @xrd
@@ -327,24 +334,36 @@ schema Bucket:
 ```
 
 ```bash
-# No --group flag needed - format expression is automatically resolved
+# No --group flag needed - expression is automatically evaluated
 kcl2xrd -i bucket.k -o bucket.yaml
+# Generates:
+# - metadata.name: xbuckets.aws.mycorp.io (plural of XBucket)
+# - spec.names.kind: XBucket (from __xrd_kind)
+# - spec.group: aws.mycorp.io (from evaluated __xrd_group)
 ```
 
-### Example with Unresolvable Expressions
+### Example with Complex Expressions
 
 ```kcl
-# Variable uses property access - cannot be resolved by parser
+# Using property access and nested structures
+settings = {
+    PLATFORM_API_GROUP: "platform.example.com"
+}
+
+_xrSubgroup = "storage"
+
+__xrd_kind = "XDatabase"
 __xrd_group = "{}.{}".format(_xrSubgroup, settings.PLATFORM_API_GROUP)
 
 # @xrd
-schema Bucket:
+schema Database:
     name: str
 ```
 
 ```bash
-# Must provide --group flag when expression cannot be resolved
-kcl2xrd -i bucket.k --group aws.platform.example.com -o bucket.yaml
+# All expressions are evaluated using KCL runtime
+kcl2xrd -i database.k -o database.yaml
+# Automatically resolves to: storage.platform.example.com
 ```
 
 ## CLI Options
