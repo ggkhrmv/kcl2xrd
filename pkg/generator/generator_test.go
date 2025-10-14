@@ -500,3 +500,79 @@ func TestGenerateXRDWithMapTypes(t *testing.T) {
 	}
 }
 
+func TestGenerateXRDWithMinItems(t *testing.T) {
+	// Test that @minItems annotation is properly applied to array fields
+	minItems1 := 1
+	minItems2 := 2
+	schema := &parser.Schema{
+		Name: "TestMinItems",
+		Fields: []parser.Field{
+			{
+				Name:     "tags",
+				Type:     "[str]",
+				Required: true,
+				MinItems: &minItems1,
+			},
+			{
+				Name:     "items",
+				Type:     "[str]",
+				Required: false,
+				MinItems: &minItems2,
+				ListType: "set",
+			},
+		},
+	}
+
+	xrdYAML, err := GenerateXRD(schema, "example.org", "v1alpha1")
+	if err != nil {
+		t.Fatalf("GenerateXRD failed: %v", err)
+	}
+
+	// Parse the YAML
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Generated XRD is not valid YAML: %v", err)
+	}
+
+	// Navigate to parameters properties
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	versionSchema := version["schema"].(map[string]interface{})
+	openAPISchema := versionSchema["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPISchema["properties"].(map[string]interface{})
+	specProp := properties["spec"].(map[string]interface{})
+	specProps := specProp["properties"].(map[string]interface{})
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+
+	// Check tags field
+	tags := paramProps["tags"].(map[string]interface{})
+	if tags["type"] != "array" {
+		t.Errorf("Expected type 'array' for tags, got '%v'", tags["type"])
+	}
+	minItemsValue := tags["minItems"]
+	if minItemsValue == nil {
+		t.Error("Expected minItems to be set for tags field")
+	} else if minItemsValue != 1 {
+		t.Errorf("Expected minItems 1 for tags field, got %v", minItemsValue)
+	}
+
+	// Check items field
+	items := paramProps["items"].(map[string]interface{})
+	if items["type"] != "array" {
+		t.Errorf("Expected type 'array' for items, got '%v'", items["type"])
+	}
+	minItemsValue = items["minItems"]
+	if minItemsValue == nil {
+		t.Error("Expected minItems to be set for items field")
+	} else if minItemsValue != 2 {
+		t.Errorf("Expected minItems 2 for items field, got %v", minItemsValue)
+	}
+	// Check that listType is also set
+	listType := items["x-kubernetes-list-type"]
+	if listType != "set" {
+		t.Errorf("Expected x-kubernetes-list-type 'set', got '%v'", listType)
+	}
+}
+
