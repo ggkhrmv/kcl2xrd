@@ -1336,4 +1336,112 @@ func TestGenerateXRDWithFormat(t *testing.T) {
 	}
 }
 
+func TestGenerateXRDWithSpecLevelFields(t *testing.T) {
+	schema := &parser.Schema{
+		Name:        "MyResource",
+		Description: "A resource with spec-level fields",
+		Fields: []parser.Field{
+			{
+				Name:     "name",
+				Type:     "str",
+				Required: true,
+			},
+			{
+				Name:     "replicas",
+				Type:     "int",
+				Required: false,
+				Default:  "3",
+			},
+			{
+				Name:     "compositionSelector",
+				Type:     "{str:str}",
+				Required: false,
+				IsSpec:   true,
+			},
+			{
+				Name:     "customSpecField",
+				Type:     "str",
+				Required: true,
+				IsSpec:   true,
+			},
+		},
+	}
+
+	xrdYAML, err := GenerateXRD(schema, "example.org", "v1alpha1")
+	if err != nil {
+		t.Fatalf("GenerateXRD failed: %v", err)
+	}
+
+	// Check that it's valid YAML
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Generated XRD is not valid YAML: %v", err)
+	}
+
+	// Navigate to the schema
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	schema_obj := version["schema"].(map[string]interface{})
+	openAPIV3Schema := schema_obj["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPIV3Schema["properties"].(map[string]interface{})
+
+	// Check that spec section exists
+	specSection := properties["spec"].(map[string]interface{})
+	specProps := specSection["properties"].(map[string]interface{})
+
+	// Verify parameters section exists with regular fields
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+
+	// Verify regular spec.parameters fields
+	if _, ok := paramProps["name"]; !ok {
+		t.Error("Expected 'name' field in spec.parameters")
+	}
+	if _, ok := paramProps["replicas"]; !ok {
+		t.Error("Expected 'replicas' field in spec.parameters")
+	}
+
+	// Verify spec-level fields are NOT in parameters
+	if _, ok := paramProps["compositionSelector"]; ok {
+		t.Error("Spec-level field 'compositionSelector' should not be in spec.parameters")
+	}
+	if _, ok := paramProps["customSpecField"]; ok {
+		t.Error("Spec-level field 'customSpecField' should not be in spec.parameters")
+	}
+
+	// Verify spec-level fields exist directly under spec
+	if _, ok := specProps["compositionSelector"]; !ok {
+		t.Error("Expected 'compositionSelector' field directly under spec")
+	}
+	if _, ok := specProps["customSpecField"]; !ok {
+		t.Error("Expected 'customSpecField' field directly under spec")
+	}
+
+	// Verify spec required includes the required spec-level field
+	specRequired := specSection["required"].([]interface{})
+	foundCustomSpecField := false
+	foundParameters := false
+	for _, req := range specRequired {
+		if req == "customSpecField" {
+			foundCustomSpecField = true
+		}
+		if req == "parameters" {
+			foundParameters = true
+		}
+	}
+	if !foundCustomSpecField {
+		t.Error("Expected 'customSpecField' to be in spec.required")
+	}
+	if !foundParameters {
+		t.Error("Expected 'parameters' to be in spec.required")
+	}
+
+	// Verify the type of compositionSelector
+	compositionSelector := specProps["compositionSelector"].(map[string]interface{})
+	if compositionSelector["type"] != "object" {
+		t.Errorf("Expected type 'object' for compositionSelector, got '%v'", compositionSelector["type"])
+	}
+}
+
 

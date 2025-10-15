@@ -226,7 +226,7 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 		}
 	}
 
-	// Build the spec.parameters structure and status structure
+	// Build the spec.parameters structure, status structure, and spec-level fields
 	parametersSchema := PropertySchema{
 		Type:       "object",
 		Properties: make(map[string]PropertySchema),
@@ -238,6 +238,10 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 		Properties: make(map[string]PropertySchema),
 		Required:   []string{},
 	}
+	
+	// Map to store spec-level fields (fields marked with @spec)
+	specLevelFields := make(map[string]PropertySchema)
+	specLevelRequired := []string{}
 	
 	hasStatusFields := false
 	
@@ -272,8 +276,14 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 				statusSchema.Required = append(statusSchema.Required, field.Name)
 			}
 			hasStatusFields = true
+		} else if field.IsSpec {
+			// Spec-level field (goes directly under spec, not in parameters)
+			specLevelFields[field.Name] = propSchema
+			if field.Required {
+				specLevelRequired = append(specLevelRequired, field.Name)
+			}
 		} else {
-			// Regular spec field
+			// Regular spec.parameters field
 			parametersSchema.Properties[field.Name] = propSchema
 			if field.Required {
 				parametersSchema.Required = append(parametersSchema.Required, field.Name)
@@ -307,6 +317,16 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 			"parameters": parametersSchema,
 		},
 		Required: []string{"parameters"},
+	}
+	
+	// Add spec-level fields directly to spec
+	for fieldName, fieldSchema := range specLevelFields {
+		specSchema.Properties[fieldName] = fieldSchema
+	}
+	
+	// Add spec-level required fields to spec required list
+	for _, requiredField := range specLevelRequired {
+		specSchema.Required = append(specSchema.Required, requiredField)
 	}
 
 	xrd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"] = specSchema

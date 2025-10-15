@@ -76,6 +76,7 @@ type Field struct {
 	ListType              string // x-kubernetes-list-type
 	ListMapKeys           []string // x-kubernetes-list-map-keys
 	IsStatus              bool   // marks field as status field (goes in status section instead of spec)
+	IsSpec                bool   // marks field as spec-level field (goes directly under spec, not in spec.parameters)
 	AdditionalPropertiesAnnotation bool // @additionalProperties annotation
 	// OneOf and AnyOf validations
 	OneOf [][]string // oneOf validation - array of required field combinations
@@ -153,6 +154,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	listTypeRegex := regexp.MustCompile(`@listType\s*\(\s*['"](.*?)['"]\s*\)`)
 	listMapKeysRegex := regexp.MustCompile(`@listMapKeys\s*\(\s*\[(.*?)\]\s*\)`)
 	statusAnnotationRegex := regexp.MustCompile(`@status`)
+	specAnnotationRegex := regexp.MustCompile(`@spec`)
 	xrdAnnotationRegex := regexp.MustCompile(`@xrd`)
 	oneOfRegex := regexp.MustCompile(`@oneOf\s*\(\s*\[(.*?)\]\s*\)`)
 	anyOfRegex := regexp.MustCompile(`@anyOf\s*\(\s*\[(.*?)\]\s*\)`)
@@ -372,7 +374,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				applyValidationAnnotations(&field, pendingAnnotations, 
 					patternRegex, minLengthRegex, maxLengthRegex, 
 					minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, itemsFormatRegex, enumRegex, immutableRegex, celValidationRegex,
-					preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, oneOfRegex, anyOfRegex)
+					preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, specAnnotationRegex, oneOfRegex, anyOfRegex)
 				pendingAnnotations = nil
 				
 				currentSchema.Fields = append(currentSchema.Fields, field)
@@ -429,7 +431,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 // applyValidationAnnotations applies validation annotations from comments to a field
 func applyValidationAnnotations(field *Field, annotations []string, 
 	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, itemsFormatRegex, enumRegex, immutableRegex, celValidationRegex,
-	preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, oneOfRegex, anyOfRegex *regexp.Regexp) {
+	preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, specAnnotationRegex, oneOfRegex, anyOfRegex *regexp.Regexp) {
 	
 	for _, annotation := range annotations {
 		// Check for pattern
@@ -555,6 +557,11 @@ func applyValidationAnnotations(field *Field, annotations []string,
 		// Check for status annotation
 		if statusAnnotationRegex.MatchString(annotation) {
 			field.IsStatus = true
+		}
+		
+		// Check for spec annotation
+		if specAnnotationRegex.MatchString(annotation) {
+			field.IsSpec = true
 		}
 		
 		// Check for oneOf
