@@ -240,12 +240,10 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 	
 	// Check if there's a separate status schema
 	var statusSchemaObj *parser.Schema
-	if schemas != nil {
-		for _, s := range schemas {
-			if s.IsStatus {
-				statusSchemaObj = s
-				break
-			}
+	for _, s := range schemas {
+		if s.IsStatus {
+			statusSchemaObj = s
+			break
 		}
 	}
 	
