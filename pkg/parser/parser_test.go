@@ -839,4 +839,128 @@ func TestParseKCLFileWithCombinedOneOfAndAnyOf(t *testing.T) {
 	}
 }
 
+func TestParseKCLFileWithSchemaLevelOneOf(t *testing.T) {
+	// Create a temporary test file
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.k")
+
+	content := `# @xrd
+# @oneOf([["groupName"], ["groupRef"]])
+schema TestSchema:
+    groupName?: str
+    groupRef?: str
+    name: str
+`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Parse the file
+	schema, err := ParseKCLFile(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFile failed: %v", err)
+	}
+
+	// Check schema-level oneOf
+	if len(schema.OneOf) != 2 {
+		t.Fatalf("Expected 2 schema-level oneOf combinations, got %d", len(schema.OneOf))
+	}
+	
+	// Check first oneOf combination
+	if len(schema.OneOf[0]) != 1 || schema.OneOf[0][0] != "groupName" {
+		t.Errorf("Expected first oneOf to be ['groupName'], got %v", schema.OneOf[0])
+	}
+	
+	// Check second oneOf combination
+	if len(schema.OneOf[1]) != 1 || schema.OneOf[1][0] != "groupRef" {
+		t.Errorf("Expected second oneOf to be ['groupRef'], got %v", schema.OneOf[1])
+	}
+}
+
+func TestParseKCLFileWithSchemaLevelAnyOf(t *testing.T) {
+	// Create a temporary test file
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.k")
+
+	content := `# @xrd
+# @anyOf([["userEmail"], ["userObjectId"]])
+schema TestSchema:
+    userEmail?: str
+    userObjectId?: str
+    name: str
+`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Parse the file
+	schema, err := ParseKCLFile(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFile failed: %v", err)
+	}
+
+	// Check schema-level anyOf
+	if len(schema.AnyOf) != 2 {
+		t.Fatalf("Expected 2 schema-level anyOf combinations, got %d", len(schema.AnyOf))
+	}
+	
+	// Check first anyOf combination
+	if len(schema.AnyOf[0]) != 1 || schema.AnyOf[0][0] != "userEmail" {
+		t.Errorf("Expected first anyOf to be ['userEmail'], got %v", schema.AnyOf[0])
+	}
+	
+	// Check second anyOf combination
+	if len(schema.AnyOf[1]) != 1 || schema.AnyOf[1][0] != "userObjectId" {
+		t.Errorf("Expected second anyOf to be ['userObjectId'], got %v", schema.AnyOf[1])
+	}
+}
+
+func TestParseKCLFileWithItemsFormat(t *testing.T) {
+	// Create a temporary test file
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.k")
+
+	content := `schema TestSchema:
+    # @itemsFormat("email")
+    emails: [str]
+    
+    # @itemsFormat("uuid")
+    ids?: [str]
+`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Parse the file
+	schema, err := ParseKCLFile(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFile failed: %v", err)
+	}
+
+	// Check emails field
+	if len(schema.Fields) < 2 {
+		t.Fatal("Expected at least 2 fields")
+	}
+	
+	emailsField := schema.Fields[0]
+	if emailsField.Name != "emails" {
+		t.Errorf("Expected field name 'emails', got '%s'", emailsField.Name)
+	}
+	if emailsField.ItemsFormat != "email" {
+		t.Errorf("Expected itemsFormat 'email', got '%s'", emailsField.ItemsFormat)
+	}
+	
+	// Check ids field
+	idsField := schema.Fields[1]
+	if idsField.Name != "ids" {
+		t.Errorf("Expected field name 'ids', got '%s'", idsField.Name)
+	}
+	if idsField.ItemsFormat != "uuid" {
+		t.Errorf("Expected itemsFormat 'uuid', got '%s'", idsField.ItemsFormat)
+	}
+}
+
 

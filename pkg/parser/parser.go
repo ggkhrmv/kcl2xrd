@@ -18,6 +18,9 @@ type Schema struct {
 	Fields      []Field
 	IsXRD       bool   // marked with @xrd annotation
 	IsStatus    bool   // marked with @status annotation - used as status schema
+	// Schema-level OneOf and AnyOf validations (apply to parameters object)
+	OneOf [][]string // oneOf validation - array of required field combinations
+	AnyOf [][]string // anyOf validation - array of required field combinations
 }
 
 // ParseResult contains all schemas parsed from a file
@@ -63,6 +66,7 @@ type Field struct {
 	MinItems    *int   // minimum number of items in arrays
 	MaxItems    *int   // maximum number of items in arrays
 	Format      string // format for strings (e.g., "date-time")
+	ItemsFormat string // format for array items (e.g., "email" for [str] arrays)
 	Enum        []string // enumeration of allowed values
 	Immutable   bool   // x-kubernetes-immutable marker
 	CELValidations []CELValidation // CEL validation rules
@@ -139,6 +143,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	minItemsRegex := regexp.MustCompile(`@minItems\s*\(\s*(\d+)\s*\)`)
 	maxItemsRegex := regexp.MustCompile(`@maxItems\s*\(\s*(\d+)\s*\)`)
 	formatRegex := regexp.MustCompile(`@format\s*\(\s*['"](.*?)['"]\s*\)`)
+	itemsFormatRegex := regexp.MustCompile(`@itemsFormat\s*\(\s*['"](.*?)['"]\s*\)`)
 	enumRegex := regexp.MustCompile(`@enum\s*\(\s*\[(.*?)\]\s*\)`)
 	immutableRegex := regexp.MustCompile(`@immutable`)
 	celValidationRegex := regexp.MustCompile(`@validate\s*\(\s*['"](.*?)['"]\s*(?:,\s*['"](.*?)['"]\s*)?\)`)
@@ -304,6 +309,14 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				if statusAnnotationRegex.MatchString(annotation) {
 					currentSchema.IsStatus = true
 				}
+				// Check for schema-level oneOf
+				if matches := oneOfRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+					currentSchema.OneOf = parseRequiredCombinations(matches[1])
+				}
+				// Check for schema-level anyOf
+				if matches := anyOfRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+					currentSchema.AnyOf = parseRequiredCombinations(matches[1])
+				}
 			}
 			pendingAnnotations = nil
 			pendingComments = nil
@@ -358,7 +371,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				// Apply validation annotations from pending comments
 				applyValidationAnnotations(&field, pendingAnnotations, 
 					patternRegex, minLengthRegex, maxLengthRegex, 
-					minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, enumRegex, immutableRegex, celValidationRegex,
+					minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, itemsFormatRegex, enumRegex, immutableRegex, celValidationRegex,
 					preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, oneOfRegex, anyOfRegex)
 				pendingAnnotations = nil
 				
@@ -415,7 +428,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 
 // applyValidationAnnotations applies validation annotations from comments to a field
 func applyValidationAnnotations(field *Field, annotations []string, 
-	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, enumRegex, immutableRegex, celValidationRegex,
+	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, itemsFormatRegex, enumRegex, immutableRegex, celValidationRegex,
 	preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, oneOfRegex, anyOfRegex *regexp.Regexp) {
 	
 	for _, annotation := range annotations {
@@ -469,6 +482,11 @@ func applyValidationAnnotations(field *Field, annotations []string,
 		// Check for format
 		if matches := formatRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			field.Format = matches[1]
+		}
+		
+		// Check for itemsFormat
+		if matches := itemsFormatRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+			field.ItemsFormat = matches[1]
 		}
 		
 		// Check for enum

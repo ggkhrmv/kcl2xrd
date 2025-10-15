@@ -1,0 +1,54 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: contactlists.directory.example.org
+spec:
+  group: directory.example.org
+  names:
+    kind: ContactList
+    plural: contactlists
+  versions:
+    - name: v1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    emails:
+                      type: array
+                      description: List of email addresses with email format validation
+                      items:
+                        type: string
+                        format: email
+                    identifiers:
+                      type: array
+                      description: List of unique identifiers
+                      items:
+                        type: string
+                        format: uuid
+                    phoneNumbers:
+                      type: array
+                      description: List of phone numbers with specific format
+                      items:
+                        type: string
+                        format: phone
+                      minItems: 1
+                    websites:
+                      type: array
+                      description: List of website URLs
+                      items:
+                        type: string
+                        format: uri
+                  required:
+                    - emails
+              required:
+                - parameters
+          required:
+            - spec

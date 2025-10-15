@@ -266,9 +266,10 @@ status: str
 
 ### Schema Composition Annotations
 
-#### `@oneOf([[fields]])`
+#### `@oneOf([[fields]])` - Field Level
 Specifies that exactly one of the given field combinations must be present. This is useful for mutually exclusive options.
 
+**Applied to a field:**
 ```kcl
 schema AccessControl:
     groupName?: str
@@ -281,14 +282,49 @@ schema AccessControl:
 
 This generates:
 ```yaml
-oneOf:
-  - required: ["groupName"]
-  - required: ["groupRef"]
+config:
+  type: object
+  oneOf:
+    - required: ["groupName"]
+    - required: ["groupRef"]
+```
+
+#### `@oneOf([[fields]])` - Schema Level
+Apply directly to the schema to constrain the parameters object itself:
+
+**Applied to schema (parameters level):**
+```kcl
+# @xrd
+# @oneOf([["emailAddress"], ["userId"]])
+schema UserAccount:
+    emailAddress?: str
+    userId?: str
+    displayName: str
+```
+
+This generates:
+```yaml
+spec:
+  parameters:
+    type: object
+    properties:
+      emailAddress:
+        type: string
+      userId:
+        type: string
+      displayName:
+        type: string
+    required:
+      - displayName
+    oneOf:
+      - required: ["emailAddress"]
+      - required: ["userId"]
 ```
 
 #### `@anyOf([[fields]])`
-Specifies that at least one of the given field combinations must be present. This is useful for requiring at least one way to identify or configure something.
+Specifies that at least one of the given field combinations must be present. Can be applied at both field and schema level.
 
+**Field level:**
 ```kcl
 schema User:
     userEmail?: str
@@ -299,6 +335,16 @@ schema User:
     userConfig: {str:str}
 ```
 
+**Schema level:**
+```kcl
+# @xrd
+# @anyOf([["password"], ["sshKey"]])
+schema UserAccount:
+    password?: str
+    sshKey?: str
+    username: str
+```
+
 This generates:
 ```yaml
 anyOf:
@@ -307,22 +353,49 @@ anyOf:
 ```
 
 #### Combined `@oneOf` and `@anyOf`
-You can use both annotations together for complex validation requirements:
+You can use both annotations together at either level for complex validation requirements:
 
 ```kcl
-schema AccessControl:
-    groupName?: str
-    groupRef?: str
-    userEmail?: str
-    userObjectId?: str
-    
-    # Exactly one group identifier AND at least one user identifier
-    # @oneOf([["groupName"], ["groupRef"]])
-    # @anyOf([["userEmail"], ["userObjectId"]])
-    config: {str:str}
+# @xrd
+# @oneOf([["emailAddress"], ["userId"]])
+# @anyOf([["password"], ["sshKey"]])
+schema UserAccount:
+    emailAddress?: str
+    userId?: str
+    password?: str
+    sshKey?: str
+    displayName: str
 ```
 
-This generates both `oneOf` and `anyOf` constraints in the OpenAPI schema, ensuring proper validation of the resource configuration.
+This generates both `oneOf` and `anyOf` constraints at the parameters level.
+
+#### `@itemsFormat(format)`
+Specifies the format for items in an array field. This is useful for validating array elements.
+
+```kcl
+# @itemsFormat("email")
+emails: [str]
+
+# @itemsFormat("uuid")
+identifiers: [str]
+
+# @itemsFormat("uri")
+websites?: [str]
+```
+
+This generates:
+```yaml
+emails:
+  type: array
+  items:
+    type: string
+    format: email
+identifiers:
+  type: array
+  items:
+    type: string
+    format: uuid
+```
 
 ### Kubernetes-Specific Annotations
 
@@ -866,7 +939,9 @@ See [`examples/`](examples/) directory:
 4. **dynatrace-with-metadata.k** - Full in-file metadata
 5. **preserve-unknown-fields.k** - Arbitrary properties with `{any:any}`
 6. **s3-bucket-with-policy.k** - Complex example with `any` type fields and IAM policies
-7. **oneof-anyof-example.k** - Schema composition with oneOf and anyOf validations
+7. **oneof-anyof-example.k** - Field-level oneOf and anyOf validations
+8. **schema-level-oneof-anyof.k** - Schema-level oneOf and anyOf (applied to parameters)
+9. **items-format-example.k** - Array items with format validation
 
 ## Development
 

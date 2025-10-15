@@ -281,6 +281,25 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 		}
 	}
 
+	// Apply schema-level oneOf/anyOf to parameters
+	if len(schema.OneOf) > 0 {
+		for _, requiredFields := range schema.OneOf {
+			oneOfSchema := PropertySchema{
+				Required: requiredFields,
+			}
+			parametersSchema.OneOf = append(parametersSchema.OneOf, oneOfSchema)
+		}
+	}
+	
+	if len(schema.AnyOf) > 0 {
+		for _, requiredFields := range schema.AnyOf {
+			anyOfSchema := PropertySchema{
+				Required: requiredFields,
+			}
+			parametersSchema.AnyOf = append(parametersSchema.AnyOf, anyOfSchema)
+		}
+	}
+
 	// Add spec section with parameters
 	specSchema := PropertySchema{
 		Type: "object",
@@ -365,6 +384,10 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 			schema.Items = &elementSchema
 		} else {
 			elementSchema := convertFieldToPropertySchemaWithSchemas(parser.Field{Type: elementType}, schemas)
+			// Apply itemsFormat if specified
+			if field.ItemsFormat != "" {
+				elementSchema.Format = field.ItemsFormat
+			}
 			schema.Items = &elementSchema
 		}
 	case strings.HasPrefix(field.Type, "{") && strings.Contains(field.Type, ":"):
