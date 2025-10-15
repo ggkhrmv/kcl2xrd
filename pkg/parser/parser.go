@@ -350,6 +350,14 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				if len(matches) > 4 {
 					defaultValue = strings.TrimSpace(matches[4])
 				}
+				
+				// Skip fields that start with $ (KCL internal/private fields)
+				if strings.HasPrefix(fieldName, "$") {
+					// Clear pending annotations and comments for this skipped field
+					pendingAnnotations = nil
+					pendingComments = nil
+					continue
+				}
 
 				// Clean up the type (remove "default is" text if present)
 				if strings.Contains(fieldType, ",") {

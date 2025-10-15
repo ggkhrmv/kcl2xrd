@@ -3,6 +3,7 @@ package parser
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -1141,6 +1142,76 @@ schema ConnectionSecret:
 	}
 	if len(connectionSecretSchema.Fields) != 2 {
 		t.Errorf("Expected ConnectionSecret to have 2 fields, got %d", len(connectionSecretSchema.Fields))
+	}
+}
+
+func TestParseKCLFileWithDollarPrefixFields(t *testing.T) {
+	// Create a temporary test file with fields that have $ prefix (should be omitted)
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test_dollar_prefix.k")
+
+	content := `schema MyApp:
+    # Regular field
+    name: str
+    
+    # Internal field - should be omitted
+    $internalVar: str
+    
+    # Another regular field
+    replicas?: int = 3
+    
+    # Another internal KCL field - should be omitted
+    $filter: str
+    
+    # One more regular field
+    region?: str = "us-east-1"
+`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Parse the file
+	result, err := ParseKCLFileWithSchemas(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+	}
+
+	schema := result.Primary
+	if schema == nil {
+		t.Fatal("Expected primary schema to be set")
+	}
+
+	// Check that we only have 3 fields (the ones without $ prefix)
+	if len(schema.Fields) != 3 {
+		t.Errorf("Expected 3 fields, got %d", len(schema.Fields))
+	}
+
+	// Verify the field names
+	expectedFields := map[string]bool{
+		"name":     false,
+		"replicas": false,
+		"region":   false,
+	}
+
+	for _, field := range schema.Fields {
+		if _, exists := expectedFields[field.Name]; exists {
+			expectedFields[field.Name] = true
+		} else {
+			t.Errorf("Unexpected field '%s' found", field.Name)
+		}
+		
+		// Verify no field starts with $
+		if strings.HasPrefix(field.Name, "$") {
+			t.Errorf("Field '%s' should have been filtered out (starts with $)", field.Name)
+		}
+	}
+
+	// Verify all expected fields were found
+	for fieldName, found := range expectedFields {
+		if !found {
+			t.Errorf("Expected field '%s' not found", fieldName)
+		}
 	}
 }
 

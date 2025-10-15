@@ -27,6 +27,7 @@ cd kcl2xrd && make build
 - **KCL runtime evaluation** - automatically evaluates metadata variables including format expressions, property access, and variable references
 - **Import support** - reuse central configuration files across multiple XRDs with KCL imports
 - **`@xrd` annotation** - mark parent schema, ignore unrelated code
+- **Field filtering with `$` prefix** - automatically omit KCL internal variables and keywords from XRD generation
 - **Validation annotations** - patterns, enums, ranges, string/numeric constraints, CEL expressions, oneOf/anyOf schema composition
 - **Kubernetes-specific annotations** - immutability, preserveUnknownFields, mapType, listType, listMapKeys, additionalProperties
 - **`@status` annotation** - separate status fields or define separate status schema for proper Crossplane resource state management
@@ -177,6 +178,50 @@ Marks the schema to be converted to XRD. Only one schema in a file should be mar
 schema MyResource:
     name: str
 ```
+
+### Field Filtering
+
+#### `$` Prefix - Internal/Private Fields
+Fields with names starting with `$` are treated as KCL internal variables and are automatically omitted from the generated XRD. This is useful for KCL-specific fields like `$filter` or internal configuration variables that should not appear in the Crossplane XRD.
+
+```kcl
+schema MyApp:
+    # Regular field - included in XRD
+    name: str
+    replicas?: int = 3
+    
+    # Internal KCL variable - omitted from XRD
+    $filter: str
+    
+    # Internal configuration - omitted from XRD
+    $internalConfig: {str:str}
+    
+    # Regular field - included in XRD
+    region?: str = "us-east-1"
+```
+
+This generates an XRD with only the non-`$` prefixed fields:
+```yaml
+spec:
+  properties:
+    parameters:
+      type: object
+      properties:
+        name:
+          type: string
+        replicas:
+          type: integer
+          default: 3
+        region:
+          type: string
+          default: us-east-1
+```
+
+**Key points:**
+- Any field starting with `$` is automatically filtered out
+- No annotation needed - the `$` prefix is sufficient
+- Useful for KCL keywords and internal variables
+- Works with all field types and validation annotations
 
 ### String Validation Annotations
 
