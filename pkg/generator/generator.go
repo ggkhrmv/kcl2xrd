@@ -107,6 +107,8 @@ type PropertySchema struct {
 	MinItems                     *int            `yaml:"minItems,omitempty"`
 	MaxItems                     *int            `yaml:"maxItems,omitempty"`
 	Enum                         []string        `yaml:"enum,omitempty"`
+	OneOf                        []PropertySchema `yaml:"oneOf,omitempty"`
+	AnyOf                        []PropertySchema `yaml:"anyOf,omitempty"`
 	XKubernetesValidations       []K8sValidation `yaml:"x-kubernetes-validations,omitempty"`
 	XKubernetesImmutable         *bool           `yaml:"x-kubernetes-immutable,omitempty"`
 	XKubernetesPreserveUnknownFields *bool       `yaml:"x-kubernetes-preserve-unknown-fields,omitempty"`
@@ -535,6 +537,26 @@ func applyFieldValidationsAndDefaults(field parser.Field, schema *PropertySchema
 				Message: celVal.Message,
 			}
 			schema.XKubernetesValidations = append(schema.XKubernetesValidations, k8sVal)
+		}
+	}
+	
+	// Apply OneOf validations
+	if len(field.OneOf) > 0 {
+		for _, requiredFields := range field.OneOf {
+			oneOfSchema := PropertySchema{
+				Required: requiredFields,
+			}
+			schema.OneOf = append(schema.OneOf, oneOfSchema)
+		}
+	}
+	
+	// Apply AnyOf validations
+	if len(field.AnyOf) > 0 {
+		for _, requiredFields := range field.AnyOf {
+			anyOfSchema := PropertySchema{
+				Required: requiredFields,
+			}
+			schema.AnyOf = append(schema.AnyOf, anyOfSchema)
 		}
 	}
 }

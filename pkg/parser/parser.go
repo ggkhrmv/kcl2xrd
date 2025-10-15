@@ -73,6 +73,9 @@ type Field struct {
 	ListMapKeys           []string // x-kubernetes-list-map-keys
 	IsStatus              bool   // marks field as status field (goes in status section instead of spec)
 	AdditionalPropertiesAnnotation bool // @additionalProperties annotation
+	// OneOf and AnyOf validations
+	OneOf [][]string // oneOf validation - array of required field combinations
+	AnyOf [][]string // anyOf validation - array of required field combinations
 }
 
 // CELValidation represents a CEL validation rule
@@ -146,6 +149,8 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	listMapKeysRegex := regexp.MustCompile(`@listMapKeys\s*\(\s*\[(.*?)\]\s*\)`)
 	statusAnnotationRegex := regexp.MustCompile(`@status`)
 	xrdAnnotationRegex := regexp.MustCompile(`@xrd`)
+	oneOfRegex := regexp.MustCompile(`@oneOf\s*\(\s*\[(.*?)\]\s*\)`)
+	anyOfRegex := regexp.MustCompile(`@anyOf\s*\(\s*\[(.*?)\]\s*\)`)
 	
 	var pendingAnnotations []string
 	var pendingComments []string
@@ -354,7 +359,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				applyValidationAnnotations(&field, pendingAnnotations, 
 					patternRegex, minLengthRegex, maxLengthRegex, 
 					minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, enumRegex, immutableRegex, celValidationRegex,
-					preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex)
+					preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, oneOfRegex, anyOfRegex)
 				pendingAnnotations = nil
 				
 				currentSchema.Fields = append(currentSchema.Fields, field)
@@ -411,7 +416,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 // applyValidationAnnotations applies validation annotations from comments to a field
 func applyValidationAnnotations(field *Field, annotations []string, 
 	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, enumRegex, immutableRegex, celValidationRegex,
-	preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex *regexp.Regexp) {
+	preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, oneOfRegex, anyOfRegex *regexp.Regexp) {
 	
 	for _, annotation := range annotations {
 		// Check for pattern
@@ -533,7 +538,80 @@ func applyValidationAnnotations(field *Field, annotations []string,
 		if statusAnnotationRegex.MatchString(annotation) {
 			field.IsStatus = true
 		}
+		
+		// Check for oneOf
+		if matches := oneOfRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+			field.OneOf = parseRequiredCombinations(matches[1])
+		}
+		
+		// Check for anyOf
+		if matches := anyOfRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+			field.AnyOf = parseRequiredCombinations(matches[1])
+		}
 	}
+}
+
+// parseRequiredCombinations parses oneOf/anyOf annotation content
+// Example: [["groupName"], ["groupRef"]] or [["userEmail"], ["userObjectId"]]
+func parseRequiredCombinations(content string) [][]string {
+	var result [][]string
+	
+	// Remove outer brackets and split by "],["
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return result
+	}
+	
+	// Split into individual combinations like ["field1"], ["field2"]
+	// We need to handle nested brackets properly
+	var current strings.Builder
+	depth := 0
+	var combinations []string
+	
+	for _, ch := range content {
+		if ch == '[' {
+			depth++
+			if depth > 1 {
+				current.WriteRune(ch)
+			}
+		} else if ch == ']' {
+			depth--
+			if depth > 0 {
+				current.WriteRune(ch)
+			} else if depth == 0 {
+				// End of a combination
+				combo := strings.TrimSpace(current.String())
+				if combo != "" {
+					combinations = append(combinations, combo)
+				}
+				current.Reset()
+			}
+		} else if ch == ',' && depth == 1 {
+			// Skip commas between combinations at top level
+			continue
+		} else if depth > 0 {
+			current.WriteRune(ch)
+		}
+	}
+	
+	// Parse each combination
+	for _, combo := range combinations {
+		var fields []string
+		// Parse ["field1", "field2"] format
+		fieldStrs := strings.Split(combo, ",")
+		for _, fieldStr := range fieldStrs {
+			fieldStr = strings.TrimSpace(fieldStr)
+			fieldStr = strings.Trim(fieldStr, `"'`)
+			if fieldStr != "" {
+				fields = append(fields, fieldStr)
+			}
+		}
+		if len(fields) > 0 {
+			result = append(result, fields)
+		}
+	}
+	
+	return result
 }
 
 // splitPrinterColumns splits printer columns string respecting quoted strings
