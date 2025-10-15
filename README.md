@@ -230,6 +230,30 @@ Sets minimum number of items in arrays.
 tags: [str]
 ```
 
+#### `@maxItems(n)`
+Sets maximum number of items in arrays.
+
+```kcl
+# @maxItems(10)
+tags: [str]
+```
+
+### String Format Annotations
+
+#### `@format(format)`
+Specifies the format for string fields. Common formats include `"date-time"`, `"email"`, `"uuid"`, `"uri"`, `"ipv4"`, `"ipv6"`, etc.
+
+```kcl
+# @format("date-time")
+createdAt: str
+
+# @format("email")
+email: str
+
+# @format("uuid")
+id: str
+```
+
 ### Enum Validation
 
 #### `@enum([values])`
@@ -388,6 +412,14 @@ schema ValidatedResource:
     # @maxLength(63)
     name: str
     
+    # String with format validation
+    # @format("date-time")
+    createdAt: str
+    
+    # Email with format and pattern
+    # @format("email")
+    email?: str
+    
     # Enum validation
     # @enum(["active", "inactive", "pending"])
     status?: str = "active"
@@ -410,8 +442,9 @@ schema ValidatedResource:
     # @listType("set")
     tags?: [str]
     
-    # Array with minimum items
+    # Array with minimum and maximum items
     # @minItems(1)
+    # @maxItems(10)
     requiredItems: [str]
     
     # CEL validation

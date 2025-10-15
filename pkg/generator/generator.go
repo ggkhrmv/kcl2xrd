@@ -105,6 +105,7 @@ type PropertySchema struct {
 	Minimum                      *int            `yaml:"minimum,omitempty"`
 	Maximum                      *int            `yaml:"maximum,omitempty"`
 	MinItems                     *int            `yaml:"minItems,omitempty"`
+	MaxItems                     *int            `yaml:"maxItems,omitempty"`
 	Enum                         []string        `yaml:"enum,omitempty"`
 	XKubernetesValidations       []K8sValidation `yaml:"x-kubernetes-validations,omitempty"`
 	XKubernetesImmutable         *bool           `yaml:"x-kubernetes-immutable,omitempty"`
@@ -486,6 +487,14 @@ func applyFieldValidationsAndDefaults(field parser.Field, schema *PropertySchema
 	
 	if field.MinItems != nil {
 		schema.MinItems = field.MinItems
+	}
+	
+	if field.MaxItems != nil {
+		schema.MaxItems = field.MaxItems
+	}
+	
+	if field.Format != "" {
+		schema.Format = field.Format
 	}
 	
 	if len(field.Enum) > 0 {
