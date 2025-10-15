@@ -305,9 +305,25 @@ schema Database:
 ```
 
 This generates an XRD with separate `spec` and `status` sections:
-- Spec fields go to `spec.parameters`
-- Status fields go to `status` (sibling to `spec`)
+- Spec fields go to `spec.parameters` with `additionalProperties: true`
+- Status fields go to `status` (sibling to `spec`) with `additionalProperties: true`
 - All validation and Kubernetes annotations work with status fields
+
+**Empty Status with Preserve Unknown Fields:**
+
+You can also define status without any fields using the `__xrd_status_preserve_unknown_fields` metadata variable:
+
+```kcl
+__xrd_group = "example.org"
+__xrd_kind = "KafkaCluster"
+__xrd_status_preserve_unknown_fields = True
+
+schema KafkaCluster:
+    tenant: str
+    replicas?: int = 3
+```
+
+This generates a status section with just `x-kubernetes-preserve-unknown-fields: true`, allowing any status fields to be set dynamically.
 
 ### CEL Validation
 
@@ -373,6 +389,7 @@ Define in your KCL file with `__xrd_` prefix:
 - `__xrd_categories` - Categories list
 - `__xrd_served` - Served flag (True/False)
 - `__xrd_referenceable` - Referenceable flag (True/False)
+- `__xrd_status_preserve_unknown_fields` - Enable empty status with preserve-unknown-fields (True/False)
 - `__xrd_printer_columns` - Printer columns list
 
 ### Metadata Variable Resolution with KCL Runtime

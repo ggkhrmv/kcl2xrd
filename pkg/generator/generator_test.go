@@ -417,12 +417,16 @@ func TestConvertFieldWithMapTypes(t *testing.T) {
 
 			if tt.expectedValueType == "" {
 				// For {any:any}, additionalProperties should be an empty schema (allowing any type)
-				if schema.AdditionalProperties.Type != "" {
-					t.Errorf("Expected empty additionalProperties type for {any:any}, got '%s'", schema.AdditionalProperties.Type)
+				if propSchema, ok := schema.AdditionalProperties.(*PropertySchema); ok && propSchema.Type != "" {
+					t.Errorf("Expected empty additionalProperties type for {any:any}, got '%s'", propSchema.Type)
 				}
 			} else {
-				if schema.AdditionalProperties.Type != tt.expectedValueType {
-					t.Errorf("Expected additionalProperties type '%s', got '%s'", tt.expectedValueType, schema.AdditionalProperties.Type)
+				if propSchema, ok := schema.AdditionalProperties.(*PropertySchema); ok {
+					if propSchema.Type != tt.expectedValueType {
+						t.Errorf("Expected additionalProperties type '%s', got '%s'", tt.expectedValueType, propSchema.Type)
+					}
+				} else {
+					t.Errorf("Expected additionalProperties to be a PropertySchema")
 				}
 			}
 		})

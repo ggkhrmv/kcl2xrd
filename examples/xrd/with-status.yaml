@@ -39,6 +39,7 @@ spec:
                         - large
                   required:
                     - name
+                  additionalProperties: true
               required:
                 - parameters
             status:
@@ -57,5 +58,6 @@ spec:
                   description: Status fields (observed state)
               required:
                 - ready
+              additionalProperties: true
           required:
             - spec

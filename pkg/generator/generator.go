@@ -54,16 +54,17 @@ type ClaimNames struct {
 
 // XRDOptions contains options for generating an XRD
 type XRDOptions struct {
-	Group          string
-	Version        string
-	Kind           string // Override the XRD kind (if empty, uses schema name)
-	WithClaims     bool
-	ClaimKind      string
-	ClaimPlural    string
-	Served         bool
-	Referenceable  bool
-	Categories     []string
-	PrinterColumns []PrinterColumn
+	Group                       string
+	Version                     string
+	Kind                        string // Override the XRD kind (if empty, uses schema name)
+	WithClaims                  bool
+	ClaimKind                   string
+	ClaimPlural                 string
+	Served                      bool
+	Referenceable               bool
+	Categories                  []string
+	PrinterColumns              []PrinterColumn
+	StatusPreserveUnknownFields bool
 }
 
 // Version represents a version in an XRD spec
@@ -94,7 +95,7 @@ type PropertySchema struct {
 	Properties  map[string]PropertySchema `yaml:"properties,omitempty"`
 	Required    []string                  `yaml:"required,omitempty"`
 	Items       *PropertySchema           `yaml:"items,omitempty"`
-	AdditionalProperties *PropertySchema   `yaml:"additionalProperties,omitempty"`
+	AdditionalProperties interface{}      `yaml:"additionalProperties,omitempty"`
 	Format      string                    `yaml:"format,omitempty"`
 	Default     interface{}               `yaml:"default,omitempty"`
 	// Validation fields
@@ -224,15 +225,17 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 
 	// Build the spec.parameters structure and status structure
 	parametersSchema := PropertySchema{
-		Type:       "object",
-		Properties: make(map[string]PropertySchema),
-		Required:   []string{},
+		Type:                 "object",
+		Properties:           make(map[string]PropertySchema),
+		Required:             []string{},
+		AdditionalProperties: true,
 	}
 	
 	statusSchema := PropertySchema{
-		Type:       "object",
-		Properties: make(map[string]PropertySchema),
-		Required:   []string{},
+		Type:                 "object",
+		Properties:           make(map[string]PropertySchema),
+		Required:             []string{},
+		AdditionalProperties: true,
 	}
 	
 	hasStatusFields := false
@@ -268,8 +271,16 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 	xrd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"] = specSchema
 	xrd.Spec.Versions[0].Schema.OpenAPIV3Schema.Required = []string{"spec"}
 	
-	// Add status section if there are status fields
-	if hasStatusFields {
+	// Add status section if there are status fields or if status preserve-unknown-fields is set
+	if hasStatusFields || opts.StatusPreserveUnknownFields {
+		// If status preserve-unknown-fields is set but no fields, create minimal status schema
+		if opts.StatusPreserveUnknownFields && !hasStatusFields {
+			preserve := true
+			statusSchema = PropertySchema{
+				Type:                         "object",
+				XKubernetesPreserveUnknownFields: &preserve,
+			}
+		}
 		xrd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["status"] = statusSchema
 	}
 

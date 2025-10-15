@@ -28,13 +28,14 @@ type ParseResult struct {
 
 // XRDMetadata contains metadata for XRD generation parsed from KCL variables
 type XRDMetadata struct {
-	XRKind         string
-	XRVersion      string
-	Group          string
-	Categories     []string
-	PrinterColumns []PrinterColumn
-	Served         *bool
-	Referenceable  *bool
+	XRKind                       string
+	XRVersion                    string
+	Group                        string
+	Categories                   []string
+	PrinterColumns               []PrinterColumn
+	Served                       *bool
+	Referenceable                *bool
+	StatusPreserveUnknownFields  *bool
 }
 
 // PrinterColumn represents an additional printer column
@@ -387,6 +388,9 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	if kclMetadata.Referenceable != nil {
 		metadata.Referenceable = kclMetadata.Referenceable
 	}
+	if kclMetadata.StatusPreserveUnknownFields != nil {
+		metadata.StatusPreserveUnknownFields = kclMetadata.StatusPreserveUnknownFields
+	}
 
 	return &ParseResult{
 		Schemas:  schemas,
@@ -670,6 +674,11 @@ func evaluateMetadataWithKCL(filename string) (*XRDMetadata, error) {
 	// Try to extract __xrd_referenceable
 	if referenceable, ok := resultMap["__xrd_referenceable"].(bool); ok {
 		metadata.Referenceable = &referenceable
+	}
+	
+	// Try to extract __xrd_status_preserve_unknown_fields
+	if statusPreserveUnknownFields, ok := resultMap["__xrd_status_preserve_unknown_fields"].(bool); ok {
+		metadata.StatusPreserveUnknownFields = &statusPreserveUnknownFields
 	}
 	
 	// Try to extract __xrd_categories
