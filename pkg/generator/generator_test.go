@@ -1336,4 +1336,371 @@ func TestGenerateXRDWithFormat(t *testing.T) {
 	}
 }
 
+func TestGenerateXRDWithSpecLevelFields(t *testing.T) {
+	schema := &parser.Schema{
+		Name:        "MyResource",
+		Description: "A resource with spec-level fields",
+		Fields: []parser.Field{
+			{
+				Name:     "name",
+				Type:     "str",
+				Required: true,
+			},
+			{
+				Name:     "replicas",
+				Type:     "int",
+				Required: false,
+				Default:  "3",
+			},
+			{
+				Name:     "compositionSelector",
+				Type:     "{str:str}",
+				Required: false,
+				IsSpec:   true,
+			},
+			{
+				Name:     "customSpecField",
+				Type:     "str",
+				Required: true,
+				IsSpec:   true,
+			},
+		},
+	}
 
+	xrdYAML, err := GenerateXRD(schema, "example.org", "v1alpha1")
+	if err != nil {
+		t.Fatalf("GenerateXRD failed: %v", err)
+	}
+
+	// Check that it's valid YAML
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Generated XRD is not valid YAML: %v", err)
+	}
+
+	// Navigate to the schema
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	schema_obj := version["schema"].(map[string]interface{})
+	openAPIV3Schema := schema_obj["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPIV3Schema["properties"].(map[string]interface{})
+
+	// Check that spec section exists
+	specSection := properties["spec"].(map[string]interface{})
+	specProps := specSection["properties"].(map[string]interface{})
+
+	// Verify parameters section exists with regular fields
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+
+	// Verify regular spec.parameters fields
+	if _, ok := paramProps["name"]; !ok {
+		t.Error("Expected 'name' field in spec.parameters")
+	}
+	if _, ok := paramProps["replicas"]; !ok {
+		t.Error("Expected 'replicas' field in spec.parameters")
+	}
+
+	// Verify spec-level fields are NOT in parameters
+	if _, ok := paramProps["compositionSelector"]; ok {
+		t.Error("Spec-level field 'compositionSelector' should not be in spec.parameters")
+	}
+	if _, ok := paramProps["customSpecField"]; ok {
+		t.Error("Spec-level field 'customSpecField' should not be in spec.parameters")
+	}
+
+	// Verify spec-level fields exist directly under spec
+	if _, ok := specProps["compositionSelector"]; !ok {
+		t.Error("Expected 'compositionSelector' field directly under spec")
+	}
+	if _, ok := specProps["customSpecField"]; !ok {
+		t.Error("Expected 'customSpecField' field directly under spec")
+	}
+
+	// Verify spec required includes the required spec-level field
+	specRequired := specSection["required"].([]interface{})
+	foundCustomSpecField := false
+	foundParameters := false
+	for _, req := range specRequired {
+		if req == "customSpecField" {
+			foundCustomSpecField = true
+		}
+		if req == "parameters" {
+			foundParameters = true
+		}
+	}
+	if !foundCustomSpecField {
+		t.Error("Expected 'customSpecField' to be in spec.required")
+	}
+	if !foundParameters {
+		t.Error("Expected 'parameters' to be in spec.required")
+	}
+
+	// Verify the type of compositionSelector
+	compositionSelector := specProps["compositionSelector"].(map[string]interface{})
+	if compositionSelector["type"] != "object" {
+		t.Errorf("Expected type 'object' for compositionSelector, got '%v'", compositionSelector["type"])
+	}
+}
+
+func TestGenerateXRDWithSpecPathSchemas(t *testing.T) {
+	// Main schema
+	mainSchema := &parser.Schema{
+		Name:        "MyApp",
+		Description: "Main application schema",
+		Fields: []parser.Field{
+			{
+				Name:     "name",
+				Type:     "str",
+				Required: true,
+			},
+			{
+				Name:     "replicas",
+				Type:     "int",
+				Required: false,
+				Default:  "3",
+			},
+		},
+	}
+
+	// Schema for spec.customParameters
+	customParamsSchema := &parser.Schema{
+		Name:     "CustomParams",
+		SpecPath: "customParameters",
+		Fields: []parser.Field{
+			{
+				Name:     "customField1",
+				Type:     "str",
+				Required: true,
+			},
+			{
+				Name:     "customField2",
+				Type:     "int",
+				Required: false,
+			},
+		},
+	}
+
+	// Schema for spec.writeConnectionSecretToRef
+	connectionSecretSchema := &parser.Schema{
+		Name:     "ConnectionSecret",
+		SpecPath: "writeConnectionSecretToRef",
+		Fields: []parser.Field{
+			{
+				Name:     "name",
+				Type:     "str",
+				Required: true,
+			},
+			{
+				Name:     "namespace",
+				Type:     "str",
+				Required: false,
+			},
+		},
+	}
+
+	// Status schema
+	statusSchema := &parser.Schema{
+		Name:     "AppStatus",
+		IsStatus: true,
+		Fields: []parser.Field{
+			{
+				Name:     "ready",
+				Type:     "bool",
+				Required: true,
+			},
+		},
+	}
+
+	schemas := map[string]*parser.Schema{
+		"MyApp":            mainSchema,
+		"CustomParams":     customParamsSchema,
+		"ConnectionSecret": connectionSecretSchema,
+		"AppStatus":        statusSchema,
+	}
+
+	xrdYAML, err := GenerateXRDWithSchemasAndOptions(mainSchema, schemas, XRDOptions{
+		Group:   "example.org",
+		Version: "v1alpha1",
+	})
+	if err != nil {
+		t.Fatalf("GenerateXRDWithSchemasAndOptions failed: %v", err)
+	}
+
+	// Check that it's valid YAML
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Generated XRD is not valid YAML: %v", err)
+	}
+
+	// Navigate to the schema
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	schema_obj := version["schema"].(map[string]interface{})
+	openAPIV3Schema := schema_obj["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPIV3Schema["properties"].(map[string]interface{})
+
+	// Check that spec section exists
+	specSection := properties["spec"].(map[string]interface{})
+	specProps := specSection["properties"].(map[string]interface{})
+
+	// Verify parameters section exists with regular fields
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+
+	// Verify regular spec.parameters fields
+	if _, ok := paramProps["name"]; !ok {
+		t.Error("Expected 'name' field in spec.parameters")
+	}
+	if _, ok := paramProps["replicas"]; !ok {
+		t.Error("Expected 'replicas' field in spec.parameters")
+	}
+
+	// Verify spec path schemas are in spec (not in parameters)
+	if _, ok := specProps["customParameters"]; !ok {
+		t.Error("Expected 'customParameters' in spec properties")
+	}
+	if _, ok := specProps["writeConnectionSecretToRef"]; !ok {
+		t.Error("Expected 'writeConnectionSecretToRef' in spec properties")
+	}
+
+	// Check customParameters fields
+	customParams := specProps["customParameters"].(map[string]interface{})
+	customParamsProps := customParams["properties"].(map[string]interface{})
+	if _, ok := customParamsProps["customField1"]; !ok {
+		t.Error("Expected 'customField1' in customParameters")
+	}
+	if _, ok := customParamsProps["customField2"]; !ok {
+		t.Error("Expected 'customField2' in customParameters")
+	}
+
+	// Check customParameters required
+	customParamsRequired := customParams["required"].([]interface{})
+	if len(customParamsRequired) != 1 || customParamsRequired[0] != "customField1" {
+		t.Errorf("Expected customParameters.required to contain 'customField1', got %v", customParamsRequired)
+	}
+
+	// Check writeConnectionSecretToRef fields
+	connectionSecret := specProps["writeConnectionSecretToRef"].(map[string]interface{})
+	connectionSecretProps := connectionSecret["properties"].(map[string]interface{})
+	if _, ok := connectionSecretProps["name"]; !ok {
+		t.Error("Expected 'name' in writeConnectionSecretToRef")
+	}
+	if _, ok := connectionSecretProps["namespace"]; !ok {
+		t.Error("Expected 'namespace' in writeConnectionSecretToRef")
+	}
+
+	// Verify status section exists
+	statusSection := properties["status"].(map[string]interface{})
+	statusProps := statusSection["properties"].(map[string]interface{})
+	if _, ok := statusProps["ready"]; !ok {
+		t.Error("Expected 'ready' field in status")
+	}
+}
+
+
+
+func TestGenerateXRDWithItemsPreserveUnknownFields(t *testing.T) {
+schema := &parser.Schema{
+Name: "XMyApp",
+Fields: []parser.Field{
+{
+Name:     "name",
+Type:     "str",
+Required: true,
+},
+{
+Name:                       "filter",
+Type:                       "[{any:any}]",
+Required:                   true,
+PreserveUnknownFields:      true,
+},
+{
+Name:                       "configs",
+Type:                       "[{str:str}]",
+Required:                   true,
+ItemsPreserveUnknownFields: true,
+},
+{
+Name:                  "metadata",
+Type:                  "{any:any}",
+Required:              false,
+PreserveUnknownFields: true,
+},
+},
+}
+
+xrdYAML, err := GenerateXRD(schema, "example.org", "v1alpha1")
+if err != nil {
+t.Fatalf("GenerateXRD failed: %v", err)
+}
+
+// Check that it's valid YAML
+var xrd map[string]interface{}
+if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+t.Fatalf("Generated XRD is not valid YAML: %v", err)
+}
+
+// Navigate to the schema
+spec := xrd["spec"].(map[string]interface{})
+versions := spec["versions"].([]interface{})
+version := versions[0].(map[string]interface{})
+schema_obj := version["schema"].(map[string]interface{})
+openAPIV3Schema := schema_obj["openAPIV3Schema"].(map[string]interface{})
+properties := openAPIV3Schema["properties"].(map[string]interface{})
+specProp := properties["spec"].(map[string]interface{})
+specProps := specProp["properties"].(map[string]interface{})
+parameters := specProps["parameters"].(map[string]interface{})
+paramProps := parameters["properties"].(map[string]interface{})
+
+// Check filter field - should have x-kubernetes-preserve-unknown-fields only on items
+filter := paramProps["filter"].(map[string]interface{})
+if filter["type"] != "array" {
+t.Errorf("Expected type 'array' for filter, got '%v'", filter["type"])
+}
+
+// Filter should NOT have x-kubernetes-preserve-unknown-fields at array level
+if _, hasPreserve := filter["x-kubernetes-preserve-unknown-fields"]; hasPreserve {
+t.Error("Array 'filter' should not have x-kubernetes-preserve-unknown-fields")
+}
+
+// Filter items SHOULD have x-kubernetes-preserve-unknown-fields
+filterItems := filter["items"].(map[string]interface{})
+if filterItems["type"] != "object" {
+t.Errorf("Expected items type 'object' for filter, got '%v'", filterItems["type"])
+}
+if preserveVal, ok := filterItems["x-kubernetes-preserve-unknown-fields"]; !ok || preserveVal != true {
+t.Error("Filter items should have x-kubernetes-preserve-unknown-fields: true")
+}
+
+// Check configs field - should have x-kubernetes-preserve-unknown-fields only on items
+configs := paramProps["configs"].(map[string]interface{})
+if configs["type"] != "array" {
+t.Errorf("Expected type 'array' for configs, got '%v'", configs["type"])
+}
+
+// Configs should NOT have x-kubernetes-preserve-unknown-fields at array level
+if _, hasPreserve := configs["x-kubernetes-preserve-unknown-fields"]; hasPreserve {
+t.Error("Array 'configs' should not have x-kubernetes-preserve-unknown-fields")
+}
+
+// Configs items SHOULD have x-kubernetes-preserve-unknown-fields
+configsItems := configs["items"].(map[string]interface{})
+if configsItems["type"] != "object" {
+t.Errorf("Expected items type 'object' for configs, got '%v'", configsItems["type"])
+}
+if preserveVal, ok := configsItems["x-kubernetes-preserve-unknown-fields"]; !ok || preserveVal != true {
+t.Error("Configs items should have x-kubernetes-preserve-unknown-fields: true")
+}
+
+// Check metadata field - should have x-kubernetes-preserve-unknown-fields on the object itself
+metadata := paramProps["metadata"].(map[string]interface{})
+if metadata["type"] != "object" {
+t.Errorf("Expected type 'object' for metadata, got '%v'", metadata["type"])
+}
+if preserveVal, ok := metadata["x-kubernetes-preserve-unknown-fields"]; !ok || preserveVal != true {
+t.Error("Metadata object should have x-kubernetes-preserve-unknown-fields: true")
+}
+}

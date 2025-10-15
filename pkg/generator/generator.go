@@ -226,7 +226,7 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 		}
 	}
 
-	// Build the spec.parameters structure and status structure
+	// Build the spec.parameters structure, status structure, and spec-level fields
 	parametersSchema := PropertySchema{
 		Type:       "object",
 		Properties: make(map[string]PropertySchema),
@@ -239,6 +239,13 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 		Required:   []string{},
 	}
 	
+	// Map to store spec-level fields (fields marked with @spec)
+	specLevelFields := make(map[string]PropertySchema)
+	specLevelRequired := []string{}
+	
+	// Map to store spec path schemas (schemas marked with @spec.path)
+	specPathSchemas := make(map[string]*parser.Schema)
+	
 	hasStatusFields := false
 	
 	// Check if there's a separate status schema
@@ -247,6 +254,10 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 		if s.IsStatus {
 			statusSchemaObj = s
 			break
+		}
+		// Collect schemas with SpecPath
+		if s.SpecPath != "" {
+			specPathSchemas[s.SpecPath] = s
 		}
 	}
 	
@@ -272,8 +283,14 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 				statusSchema.Required = append(statusSchema.Required, field.Name)
 			}
 			hasStatusFields = true
+		} else if field.IsSpec {
+			// Spec-level field (goes directly under spec, not in parameters)
+			specLevelFields[field.Name] = propSchema
+			if field.Required {
+				specLevelRequired = append(specLevelRequired, field.Name)
+			}
 		} else {
-			// Regular spec field
+			// Regular spec.parameters field
 			parametersSchema.Properties[field.Name] = propSchema
 			if field.Required {
 				parametersSchema.Required = append(parametersSchema.Required, field.Name)
@@ -307,6 +324,36 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 			"parameters": parametersSchema,
 		},
 		Required: []string{"parameters"},
+	}
+	
+	// Add spec-level fields directly to spec
+	for fieldName, fieldSchema := range specLevelFields {
+		specSchema.Properties[fieldName] = fieldSchema
+	}
+	
+	// Add spec-level required fields to spec required list
+	for _, requiredField := range specLevelRequired {
+		specSchema.Required = append(specSchema.Required, requiredField)
+	}
+	
+	// Process spec path schemas (schemas marked with @spec.path)
+	for path, specPathSchema := range specPathSchemas {
+		pathSchema := PropertySchema{
+			Type:       "object",
+			Properties: make(map[string]PropertySchema),
+			Required:   []string{},
+		}
+		
+		for _, field := range specPathSchema.Fields {
+			propSchema := convertFieldToPropertySchemaWithSchemas(field, schemas)
+			pathSchema.Properties[field.Name] = propSchema
+			if field.Required {
+				pathSchema.Required = append(pathSchema.Required, field.Name)
+			}
+		}
+		
+		// Add the path schema to spec
+		specSchema.Properties[path] = pathSchema
 	}
 
 	xrd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"] = specSchema
@@ -377,7 +424,8 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 				Type: "object",
 			}
 			// Apply preserve unknown fields if annotation is present
-			if field.PreserveUnknownFields {
+			// Use ItemsPreserveUnknownFields first, fall back to PreserveUnknownFields for backward compatibility
+			if field.ItemsPreserveUnknownFields || field.PreserveUnknownFields {
 				preserve := true
 				elementSchema.XKubernetesPreserveUnknownFields = &preserve
 			}
@@ -387,6 +435,11 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 			// Apply itemsFormat if specified
 			if field.ItemsFormat != "" {
 				elementSchema.Format = field.ItemsFormat
+			}
+			// Apply itemsPreserveUnknownFields if specified
+			if field.ItemsPreserveUnknownFields {
+				preserve := true
+				elementSchema.XKubernetesPreserveUnknownFields = &preserve
 			}
 			schema.Items = &elementSchema
 		}
@@ -531,9 +584,15 @@ func applyFieldValidationsAndDefaults(field parser.Field, schema *PropertySchema
 		schema.XKubernetesImmutable = &immutable
 	}
 	
+	// Apply preserveUnknownFields, but skip for array types with [{any:any}] pattern
+	// as those are handled in the type conversion logic
 	if field.PreserveUnknownFields {
-		preserve := true
-		schema.XKubernetesPreserveUnknownFields = &preserve
+		// Don't apply to arrays with [{any:any}] pattern - it's applied to items instead
+		isArrayWithAnyAnyPattern := strings.HasPrefix(field.Type, "[") && strings.Contains(field.Type, "{any:any}")
+		if !isArrayWithAnyAnyPattern {
+			preserve := true
+			schema.XKubernetesPreserveUnknownFields = &preserve
+		}
 	}
 	
 	if field.AdditionalPropertiesAnnotation {

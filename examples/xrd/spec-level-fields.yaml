@@ -1,0 +1,60 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: mycomposites.example.org
+spec:
+  group: example.org
+  names:
+    kind: MyComposite
+    plural: mycomposites
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                compositionRef:
+                  type: string
+                compositionRevisionRef:
+                  type: string
+                  x-kubernetes-immutable: true
+                compositionSelector:
+                  type: object
+                  description: |-
+                    Spec-level fields - these go directly under spec (not spec.parameters)
+                    This is useful for Crossplane composition-related fields
+                  additionalProperties:
+                    type: string
+                parameters:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      description: Regular fields - these go to spec.parameters
+                    region:
+                      type: string
+                      default: us-east-1
+                    replicas:
+                      type: integer
+                      default: 3
+                      minimum: 1
+                  required:
+                    - name
+              required:
+                - parameters
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                ready:
+                  type: boolean
+                  description: Status fields - these go to status section
+          required:
+            - spec
+
