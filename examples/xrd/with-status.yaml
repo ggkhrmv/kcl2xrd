@@ -1,0 +1,61 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: databases.example.org
+spec:
+  group: example.org
+  names:
+    kind: Database
+    plural: databases
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      description: Spec fields (desired state)
+                      pattern: ^[a-z0-9-]+$
+                    replicas:
+                      type: integer
+                      default: 3
+                      minimum: 1
+                      maximum: 100
+                    size:
+                      type: string
+                      default: small
+                      enum:
+                        - small
+                        - medium
+                        - large
+                  required:
+                    - name
+              required:
+                - parameters
+            status:
+              type: object
+              properties:
+                conditions:
+                  type: object
+                  additionalProperties: {}
+                  x-kubernetes-preserve-unknown-fields: true
+                endpoint:
+                  type: string
+                phase:
+                  type: string
+                ready:
+                  type: boolean
+                  description: Status fields (observed state)
+              required:
+                - ready
+          required:
+            - spec

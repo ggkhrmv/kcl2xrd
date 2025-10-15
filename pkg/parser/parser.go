@@ -67,6 +67,7 @@ type Field struct {
 	MapType               string // x-kubernetes-map-type
 	ListType              string // x-kubernetes-list-type
 	ListMapKeys           []string // x-kubernetes-list-map-keys
+	IsStatus              bool   // marks field as status field (goes in status section instead of spec)
 }
 
 // CELValidation represents a CEL validation rule
@@ -135,6 +136,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	mapTypeRegex := regexp.MustCompile(`@mapType\s*\(\s*['"](.*?)['"]\s*\)`)
 	listTypeRegex := regexp.MustCompile(`@listType\s*\(\s*['"](.*?)['"]\s*\)`)
 	listMapKeysRegex := regexp.MustCompile(`@listMapKeys\s*\(\s*\[(.*?)\]\s*\)`)
+	statusAnnotationRegex := regexp.MustCompile(`@status`)
 	xrdAnnotationRegex := regexp.MustCompile(`@xrd`)
 	
 	var pendingAnnotations []string
@@ -342,7 +344,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				applyValidationAnnotations(&field, pendingAnnotations, 
 					patternRegex, minLengthRegex, maxLengthRegex, 
 					minimumRegex, maximumRegex, minItemsRegex, enumRegex, immutableRegex, celValidationRegex,
-					preserveUnknownFieldsRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex)
+					preserveUnknownFieldsRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex)
 				pendingAnnotations = nil
 				
 				currentSchema.Fields = append(currentSchema.Fields, field)
@@ -396,7 +398,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 // applyValidationAnnotations applies validation annotations from comments to a field
 func applyValidationAnnotations(field *Field, annotations []string, 
 	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, minItemsRegex, enumRegex, immutableRegex, celValidationRegex,
-	preserveUnknownFieldsRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex *regexp.Regexp) {
+	preserveUnknownFieldsRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex *regexp.Regexp) {
 	
 	for _, annotation := range annotations {
 		// Check for pattern
@@ -495,6 +497,11 @@ func applyValidationAnnotations(field *Field, annotations []string,
 				keys[i] = key
 			}
 			field.ListMapKeys = keys
+		}
+		
+		// Check for status annotation
+		if statusAnnotationRegex.MatchString(annotation) {
+			field.IsStatus = true
 		}
 	}
 }

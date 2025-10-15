@@ -222,18 +222,37 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 		}
 	}
 
-	// Build the spec.parameters structure
+	// Build the spec.parameters structure and status structure
 	parametersSchema := PropertySchema{
 		Type:       "object",
 		Properties: make(map[string]PropertySchema),
 		Required:   []string{},
 	}
+	
+	statusSchema := PropertySchema{
+		Type:       "object",
+		Properties: make(map[string]PropertySchema),
+		Required:   []string{},
+	}
+	
+	hasStatusFields := false
 
 	for _, field := range schema.Fields {
 		propSchema := convertFieldToPropertySchemaWithSchemas(field, schemas)
-		parametersSchema.Properties[field.Name] = propSchema
-		if field.Required {
-			parametersSchema.Required = append(parametersSchema.Required, field.Name)
+		
+		// Check if field is marked as status field
+		if field.IsStatus {
+			statusSchema.Properties[field.Name] = propSchema
+			if field.Required {
+				statusSchema.Required = append(statusSchema.Required, field.Name)
+			}
+			hasStatusFields = true
+		} else {
+			// Regular spec field
+			parametersSchema.Properties[field.Name] = propSchema
+			if field.Required {
+				parametersSchema.Required = append(parametersSchema.Required, field.Name)
+			}
 		}
 	}
 
@@ -248,6 +267,11 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 
 	xrd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"] = specSchema
 	xrd.Spec.Versions[0].Schema.OpenAPIV3Schema.Required = []string{"spec"}
+	
+	// Add status section if there are status fields
+	if hasStatusFields {
+		xrd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["status"] = statusSchema
+	}
 
 	// Marshal to YAML with 2-space indentation
 	var buf strings.Builder

@@ -29,6 +29,7 @@ cd kcl2xrd && make build
 - **`@xrd` annotation** - mark parent schema, ignore unrelated code
 - **Validation annotations** - patterns, enums, ranges, string/numeric constraints, CEL expressions
 - **Kubernetes-specific annotations** - immutability, preserveUnknownFields, mapType, listType, listMapKeys
+- **`@status` annotation** - separate status fields from spec for proper Crossplane resource state management
 - **Nested schema expansion** - automatic reference resolution
 - **`any` type support** - fields without type constraints for maximum flexibility (IAM policies, etc.)
 - **`{any:any}` syntax** - arbitrary property objects with `@preserveUnknownFields`
@@ -281,6 +282,32 @@ Sets `x-kubernetes-list-map-keys` for list-map type lists.
 # @listMapKeys(["name"])
 items: [Item]
 ```
+
+#### `@status`
+Marks a field as a status field, placing it in the `status` section of the XRD instead of `spec.parameters`. Status fields represent the observed state of the resource rather than the desired state.
+
+```kcl
+schema Database:
+    # Spec fields (desired state)
+    name: str
+    size: str
+    
+    # Status fields (observed state)
+    # @status
+    ready: bool
+    
+    # @status
+    # @preserveUnknownFields
+    conditions?: {any:any}
+    
+    # @status
+    endpoint?: str
+```
+
+This generates an XRD with separate `spec` and `status` sections:
+- Spec fields go to `spec.parameters`
+- Status fields go to `status` (sibling to `spec`)
+- All validation and Kubernetes annotations work with status fields
 
 ### CEL Validation
 
@@ -555,6 +582,49 @@ schema PolicyStatement:
 ```
 
 This generates fields without a `type` constraint, only with `x-kubernetes-preserve-unknown-fields: true`, allowing maximum flexibility.
+
+### Using Status Fields
+
+For Crossplane composite resources, separate desired state (spec) from observed state (status) using the `@status` annotation:
+
+```kcl
+schema Database:
+    """A database composite resource"""
+    
+    # Spec fields: what the user wants
+    # @pattern("^[a-z0-9-]+$")
+    name: str
+    
+    # @enum(["small", "medium", "large"])
+    size?: str = "small"
+    
+    # @minimum(1)
+    replicas?: int = 1
+    
+    # Status fields: what the system observes
+    # @status
+    ready: bool
+    
+    # @status
+    phase?: str
+    
+    # @status
+    # @preserveUnknownFields
+    conditions?: {any:any}
+    
+    # @status
+    endpoint?: str
+```
+
+This generates an XRD with:
+- `spec.parameters` containing desired state fields (name, size, replicas)
+- `status` section containing observed state fields (ready, phase, conditions, endpoint)
+
+Benefits:
+- Clear separation of concerns
+- Follows Kubernetes resource conventions
+- Status fields can use all annotations (validation, preserveUnknownFields, etc.)
+- Required fields are tracked separately for spec and status
 
 ### Organizing Configuration with Imports
 

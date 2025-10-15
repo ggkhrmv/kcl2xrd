@@ -576,3 +576,134 @@ func TestGenerateXRDWithMinItems(t *testing.T) {
 	}
 }
 
+func TestGenerateXRDWithStatusFields(t *testing.T) {
+	schema := &parser.Schema{
+		Name:        "MyResource",
+		Description: "A resource with status fields",
+		Fields: []parser.Field{
+			{
+				Name:     "name",
+				Type:     "str",
+				Required: true,
+			},
+			{
+				Name:     "replicas",
+				Type:     "int",
+				Required: false,
+				Default:  "3",
+			},
+			{
+				Name:     "ready",
+				Type:     "bool",
+				Required: true,
+				IsStatus: true,
+			},
+			{
+				Name:     "phase",
+				Type:     "str",
+				Required: false,
+				IsStatus: true,
+			},
+			{
+				Name:                  "conditions",
+				Type:                  "{any:any}",
+				Required:              false,
+				IsStatus:              true,
+				PreserveUnknownFields: true,
+			},
+		},
+	}
+
+	xrdYAML, err := GenerateXRD(schema, "example.org", "v1alpha1")
+	if err != nil {
+		t.Fatalf("GenerateXRD failed: %v", err)
+	}
+
+	// Check that it's valid YAML
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Generated XRD is not valid YAML: %v", err)
+	}
+
+	// Navigate to the schema
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	schema_obj := version["schema"].(map[string]interface{})
+	openAPIV3Schema := schema_obj["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPIV3Schema["properties"].(map[string]interface{})
+
+	// Check that spec section exists with spec fields
+	specSection := properties["spec"].(map[string]interface{})
+	specProps := specSection["properties"].(map[string]interface{})
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+
+	// Verify spec fields
+	if _, ok := paramProps["name"]; !ok {
+		t.Error("Expected 'name' field in spec.parameters")
+	}
+	if _, ok := paramProps["replicas"]; !ok {
+		t.Error("Expected 'replicas' field in spec.parameters")
+	}
+
+	// Verify status fields are NOT in spec
+	if _, ok := paramProps["ready"]; ok {
+		t.Error("Status field 'ready' should not be in spec.parameters")
+	}
+	if _, ok := paramProps["phase"]; ok {
+		t.Error("Status field 'phase' should not be in spec.parameters")
+	}
+	if _, ok := paramProps["conditions"]; ok {
+		t.Error("Status field 'conditions' should not be in spec.parameters")
+	}
+
+	// Check that status section exists
+	statusSection, ok := properties["status"]
+	if !ok {
+		t.Fatal("Expected 'status' section in openAPIV3Schema properties")
+	}
+
+	statusProps := statusSection.(map[string]interface{})["properties"].(map[string]interface{})
+
+	// Verify status fields
+	if _, ok := statusProps["ready"]; !ok {
+		t.Error("Expected 'ready' field in status")
+	}
+	if _, ok := statusProps["phase"]; !ok {
+		t.Error("Expected 'phase' field in status")
+	}
+	if _, ok := statusProps["conditions"]; !ok {
+		t.Error("Expected 'conditions' field in status")
+	}
+
+	// Verify that preserveUnknownFields works on status fields
+	conditions := statusProps["conditions"].(map[string]interface{})
+	preserveUnknown := conditions["x-kubernetes-preserve-unknown-fields"]
+	if preserveUnknown != true {
+		t.Errorf("Expected x-kubernetes-preserve-unknown-fields true for conditions field, got %v", preserveUnknown)
+	}
+
+	// Verify spec fields are NOT in status
+	if _, ok := statusProps["name"]; ok {
+		t.Error("Spec field 'name' should not be in status")
+	}
+	if _, ok := statusProps["replicas"]; ok {
+		t.Error("Spec field 'replicas' should not be in status")
+	}
+
+	// Check required fields
+	statusRequired := statusSection.(map[string]interface{})["required"].([]interface{})
+	hasReadyRequired := false
+	for _, req := range statusRequired {
+		if req.(string) == "ready" {
+			hasReadyRequired = true
+			break
+		}
+	}
+	if !hasReadyRequired {
+		t.Error("Expected 'ready' to be in status required fields")
+	}
+}
+
+
