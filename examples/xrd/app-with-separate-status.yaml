@@ -1,0 +1,56 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: applications.example.org
+spec:
+  group: example.org
+  names:
+    kind: Application
+    plural: applications
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    config:
+                      type: object
+                      description: Status for the application
+                      additionalProperties: true
+                    name:
+                      type: string
+                      description: Spec fields
+                      pattern: ^[a-z0-9-]+$
+                    replicas:
+                      type: integer
+                      default: 3
+                      minimum: 1
+                      maximum: 100
+                  required:
+                    - name
+              required:
+                - parameters
+            status:
+              type: object
+              properties:
+                endpoint:
+                  type: string
+                metrics:
+                  type: object
+                  additionalProperties: true
+                phase:
+                  type: string
+                ready:
+                  type: boolean
+              required:
+                - ready
+          required:
+            - spec

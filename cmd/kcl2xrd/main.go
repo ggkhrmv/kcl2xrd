@@ -140,6 +140,11 @@ func run(cmd *cobra.Command, args []string) error {
 	if result.Metadata != nil && result.Metadata.XRKind != "" {
 		opts.Kind = result.Metadata.XRKind
 	}
+	
+	// If __xrd_status_preserve_unknown_fields is specified, use it
+	if result.Metadata != nil && result.Metadata.StatusPreserveUnknownFields != nil {
+		opts.StatusPreserveUnknownFields = *result.Metadata.StatusPreserveUnknownFields
+	}
 
 	// Generate XRD with schema resolution
 	xrd, err := generator.GenerateXRDWithSchemasAndOptions(selectedSchema, result.Schemas, opts)

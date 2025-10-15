@@ -488,3 +488,84 @@ func TestParseKCLFileWithMinItems(t *testing.T) {
 		t.Errorf("Expected listType 'set', got '%s'", itemsField.ListType)
 	}
 }
+
+func TestParseKCLFileWithStatusAnnotation(t *testing.T) {
+	// Create a temporary test file with status annotations
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test_status.k")
+
+	content := `schema TestResource:
+    # Regular spec field
+    name: str
+    
+    # @status
+    ready: bool
+    
+    # @status
+    # @preserveUnknownFields
+    conditions?: {any:any}
+    
+    # @status
+    phase?: str
+`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Parse the file
+	result, err := ParseKCLFileWithSchemas(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+	}
+
+	schema := result.Primary
+	if schema == nil {
+		t.Fatal("Expected primary schema to be set")
+	}
+
+	// Check number of fields
+	if len(schema.Fields) != 4 {
+		t.Errorf("Expected 4 fields, got %d", len(schema.Fields))
+	}
+
+	// Check name field (should NOT be status)
+	nameField := schema.Fields[0]
+	if nameField.Name != "name" {
+		t.Errorf("Expected field name 'name', got '%s'", nameField.Name)
+	}
+	if nameField.IsStatus {
+		t.Error("Expected 'name' field to NOT be a status field")
+	}
+
+	// Check ready field (should be status)
+	readyField := schema.Fields[1]
+	if readyField.Name != "ready" {
+		t.Errorf("Expected field name 'ready', got '%s'", readyField.Name)
+	}
+	if !readyField.IsStatus {
+		t.Error("Expected 'ready' field to be a status field")
+	}
+
+	// Check conditions field (should be status with preserveUnknownFields)
+	conditionsField := schema.Fields[2]
+	if conditionsField.Name != "conditions" {
+		t.Errorf("Expected field name 'conditions', got '%s'", conditionsField.Name)
+	}
+	if !conditionsField.IsStatus {
+		t.Error("Expected 'conditions' field to be a status field")
+	}
+	if !conditionsField.PreserveUnknownFields {
+		t.Error("Expected 'conditions' field to have preserveUnknownFields set")
+	}
+
+	// Check phase field (should be status)
+	phaseField := schema.Fields[3]
+	if phaseField.Name != "phase" {
+		t.Errorf("Expected field name 'phase', got '%s'", phaseField.Name)
+	}
+	if !phaseField.IsStatus {
+		t.Error("Expected 'phase' field to be a status field")
+	}
+}
+
