@@ -1071,4 +1071,77 @@ func TestParseKCLFileWithSpecAnnotation(t *testing.T) {
 	}
 }
 
+func TestParseKCLFileWithSpecPathAnnotation(t *testing.T) {
+	// Create a temporary test file with @spec.path annotations on schemas
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test_spec_path.k")
+
+	content := `# @xrd
+schema MyApp:
+    name: str
+    replicas?: int = 3
+
+# @spec.customParameters
+schema CustomParams:
+    customField1: str
+    customField2?: int
+
+# @spec.connectionSecret
+schema ConnectionSecret:
+    name: str
+    namespace?: str
+`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Parse the file
+	result, err := ParseKCLFileWithSchemas(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+	}
+
+	// Check that we have 3 schemas
+	if len(result.Schemas) != 3 {
+		t.Errorf("Expected 3 schemas, got %d", len(result.Schemas))
+	}
+
+	// Check the main schema (MyApp)
+	mainSchema := result.Schemas["MyApp"]
+	if mainSchema == nil {
+		t.Fatal("Expected MyApp schema to be present")
+	}
+	if mainSchema.SpecPath != "" {
+		t.Errorf("Expected MyApp schema to have empty SpecPath, got '%s'", mainSchema.SpecPath)
+	}
+	if !mainSchema.IsXRD {
+		t.Error("Expected MyApp schema to be marked as XRD")
+	}
+
+	// Check the CustomParams schema
+	customParamsSchema := result.Schemas["CustomParams"]
+	if customParamsSchema == nil {
+		t.Fatal("Expected CustomParams schema to be present")
+	}
+	if customParamsSchema.SpecPath != "customParameters" {
+		t.Errorf("Expected CustomParams schema to have SpecPath 'customParameters', got '%s'", customParamsSchema.SpecPath)
+	}
+	if len(customParamsSchema.Fields) != 2 {
+		t.Errorf("Expected CustomParams to have 2 fields, got %d", len(customParamsSchema.Fields))
+	}
+
+	// Check the ConnectionSecret schema
+	connectionSecretSchema := result.Schemas["ConnectionSecret"]
+	if connectionSecretSchema == nil {
+		t.Fatal("Expected ConnectionSecret schema to be present")
+	}
+	if connectionSecretSchema.SpecPath != "connectionSecret" {
+		t.Errorf("Expected ConnectionSecret schema to have SpecPath 'connectionSecret', got '%s'", connectionSecretSchema.SpecPath)
+	}
+	if len(connectionSecretSchema.Fields) != 2 {
+		t.Errorf("Expected ConnectionSecret to have 2 fields, got %d", len(connectionSecretSchema.Fields))
+	}
+}
+
 

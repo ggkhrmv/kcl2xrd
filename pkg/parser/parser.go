@@ -18,6 +18,7 @@ type Schema struct {
 	Fields      []Field
 	IsXRD       bool   // marked with @xrd annotation
 	IsStatus    bool   // marked with @status annotation - used as status schema
+	SpecPath    string // marked with @spec.path annotation - used to place fields at spec.path
 	// Schema-level OneOf and AnyOf validations (apply to parameters object)
 	OneOf [][]string // oneOf validation - array of required field combinations
 	AnyOf [][]string // anyOf validation - array of required field combinations
@@ -155,6 +156,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	listMapKeysRegex := regexp.MustCompile(`@listMapKeys\s*\(\s*\[(.*?)\]\s*\)`)
 	statusAnnotationRegex := regexp.MustCompile(`@status`)
 	specAnnotationRegex := regexp.MustCompile(`@spec`)
+	specPathAnnotationRegex := regexp.MustCompile(`@spec\.(\w+)`)
 	xrdAnnotationRegex := regexp.MustCompile(`@xrd`)
 	oneOfRegex := regexp.MustCompile(`@oneOf\s*\(\s*\[(.*?)\]\s*\)`)
 	anyOfRegex := regexp.MustCompile(`@anyOf\s*\(\s*\[(.*?)\]\s*\)`)
@@ -310,6 +312,10 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				}
 				if statusAnnotationRegex.MatchString(annotation) {
 					currentSchema.IsStatus = true
+				}
+				// Check for @spec.path annotation
+				if matches := specPathAnnotationRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+					currentSchema.SpecPath = matches[1]
 				}
 				// Check for schema-level oneOf
 				if matches := oneOfRegex.FindStringSubmatch(annotation); len(matches) > 1 {

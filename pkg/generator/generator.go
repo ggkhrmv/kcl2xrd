@@ -243,6 +243,9 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 	specLevelFields := make(map[string]PropertySchema)
 	specLevelRequired := []string{}
 	
+	// Map to store spec path schemas (schemas marked with @spec.path)
+	specPathSchemas := make(map[string]*parser.Schema)
+	
 	hasStatusFields := false
 	
 	// Check if there's a separate status schema
@@ -251,6 +254,10 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 		if s.IsStatus {
 			statusSchemaObj = s
 			break
+		}
+		// Collect schemas with SpecPath
+		if s.SpecPath != "" {
+			specPathSchemas[s.SpecPath] = s
 		}
 	}
 	
@@ -327,6 +334,26 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 	// Add spec-level required fields to spec required list
 	for _, requiredField := range specLevelRequired {
 		specSchema.Required = append(specSchema.Required, requiredField)
+	}
+	
+	// Process spec path schemas (schemas marked with @spec.path)
+	for path, specPathSchema := range specPathSchemas {
+		pathSchema := PropertySchema{
+			Type:       "object",
+			Properties: make(map[string]PropertySchema),
+			Required:   []string{},
+		}
+		
+		for _, field := range specPathSchema.Fields {
+			propSchema := convertFieldToPropertySchemaWithSchemas(field, schemas)
+			pathSchema.Properties[field.Name] = propSchema
+			if field.Required {
+				pathSchema.Required = append(pathSchema.Required, field.Name)
+			}
+		}
+		
+		// Add the path schema to spec
+		specSchema.Properties[path] = pathSchema
 	}
 
 	xrd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"] = specSchema

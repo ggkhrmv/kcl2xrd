@@ -31,6 +31,7 @@ cd kcl2xrd && make build
 - **Kubernetes-specific annotations** - immutability, preserveUnknownFields, mapType, listType, listMapKeys, additionalProperties
 - **`@status` annotation** - separate status fields or define separate status schema for proper Crossplane resource state management
 - **`@spec` annotation** - define fields directly under `spec` (not `spec.parameters`) for Crossplane composition selectors and other spec-level fields
+- **`@spec.path` annotation** - define entire schemas as objects at custom paths under `spec` (e.g., `writeConnectionSecretToRef`, `publishConnectionDetailsTo`)
 - **Nested schema expansion** - automatic reference resolution
 - **`any` type support** - fields without type constraints for maximum flexibility (IAM policies, etc.)
 - **`{any:any}` syntax** - arbitrary property objects with `@preserveUnknownFields`
@@ -563,6 +564,90 @@ spec:
 - `compositionRef` - Reference a specific composition
 - `compositionRevisionRef` - Pin to a specific composition revision
 - Custom spec-level fields for advanced Crossplane features
+
+#### `@spec.path` (Schema-Level)
+Marks an entire schema to be placed at `spec.path` in the generated XRD. Similar to `@status` for schemas, but allows specifying a custom path under `spec`. This is particularly useful for Crossplane features like `writeConnectionSecretToRef` and `publishConnectionDetailsTo`.
+
+**Usage with separate schemas:**
+
+```kcl
+# @xrd
+schema Database:
+    # Regular fields go to spec.parameters
+    name: str
+    replicas?: int = 3
+
+# @spec.writeConnectionSecretToRef
+schema ConnectionSecretRef:
+    name: str
+    namespace?: str
+
+# @spec.publishConnectionDetailsTo
+schema PublishConnectionDetails:
+    name: str
+    # @additionalProperties
+    metadata?: {str:str}
+
+# @status
+schema DatabaseStatus:
+    ready: bool
+    endpoint?: str
+```
+
+This generates an XRD with:
+```yaml
+spec:
+  properties:
+    parameters:                          # Regular fields
+      type: object
+      properties:
+        name:
+          type: string
+        replicas:
+          type: integer
+      required:
+        - name
+    writeConnectionSecretToRef:          # From @spec.writeConnectionSecretToRef schema
+      type: object
+      properties:
+        name:
+          type: string
+        namespace:
+          type: string
+      required:
+        - name
+    publishConnectionDetailsTo:          # From @spec.publishConnectionDetailsTo schema
+      type: object
+      properties:
+        name:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+        - name
+  required:
+    - parameters
+status:                                  # From @status schema
+  properties:
+    ready:
+      type: boolean
+    endpoint:
+      type: string
+```
+
+**Key points:**
+- Schema-level annotation: applies to entire schema, not individual fields
+- Creates a nested object at the specified path under `spec`
+- All fields from the annotated schema become properties of that object
+- Works alongside `@status` schemas and regular fields
+- Validation annotations work on fields within the schema
+
+**Common Crossplane use cases:**
+- `@spec.writeConnectionSecretToRef` - Connection secret configuration
+- `@spec.publishConnectionDetailsTo` - Connection details publishing
+- `@spec.resourceRefs` - Cross-resource references
+- Custom spec-level objects for platform-specific configurations
 
 #### `@additionalProperties`
 Allows a field to accept additional properties beyond those defined in its schema. Sets `additionalProperties: true` on the field.

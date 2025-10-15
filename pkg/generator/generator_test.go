@@ -1444,4 +1444,160 @@ func TestGenerateXRDWithSpecLevelFields(t *testing.T) {
 	}
 }
 
+func TestGenerateXRDWithSpecPathSchemas(t *testing.T) {
+	// Main schema
+	mainSchema := &parser.Schema{
+		Name:        "MyApp",
+		Description: "Main application schema",
+		Fields: []parser.Field{
+			{
+				Name:     "name",
+				Type:     "str",
+				Required: true,
+			},
+			{
+				Name:     "replicas",
+				Type:     "int",
+				Required: false,
+				Default:  "3",
+			},
+		},
+	}
+
+	// Schema for spec.customParameters
+	customParamsSchema := &parser.Schema{
+		Name:     "CustomParams",
+		SpecPath: "customParameters",
+		Fields: []parser.Field{
+			{
+				Name:     "customField1",
+				Type:     "str",
+				Required: true,
+			},
+			{
+				Name:     "customField2",
+				Type:     "int",
+				Required: false,
+			},
+		},
+	}
+
+	// Schema for spec.writeConnectionSecretToRef
+	connectionSecretSchema := &parser.Schema{
+		Name:     "ConnectionSecret",
+		SpecPath: "writeConnectionSecretToRef",
+		Fields: []parser.Field{
+			{
+				Name:     "name",
+				Type:     "str",
+				Required: true,
+			},
+			{
+				Name:     "namespace",
+				Type:     "str",
+				Required: false,
+			},
+		},
+	}
+
+	// Status schema
+	statusSchema := &parser.Schema{
+		Name:     "AppStatus",
+		IsStatus: true,
+		Fields: []parser.Field{
+			{
+				Name:     "ready",
+				Type:     "bool",
+				Required: true,
+			},
+		},
+	}
+
+	schemas := map[string]*parser.Schema{
+		"MyApp":            mainSchema,
+		"CustomParams":     customParamsSchema,
+		"ConnectionSecret": connectionSecretSchema,
+		"AppStatus":        statusSchema,
+	}
+
+	xrdYAML, err := GenerateXRDWithSchemasAndOptions(mainSchema, schemas, XRDOptions{
+		Group:   "example.org",
+		Version: "v1alpha1",
+	})
+	if err != nil {
+		t.Fatalf("GenerateXRDWithSchemasAndOptions failed: %v", err)
+	}
+
+	// Check that it's valid YAML
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Generated XRD is not valid YAML: %v", err)
+	}
+
+	// Navigate to the schema
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	schema_obj := version["schema"].(map[string]interface{})
+	openAPIV3Schema := schema_obj["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPIV3Schema["properties"].(map[string]interface{})
+
+	// Check that spec section exists
+	specSection := properties["spec"].(map[string]interface{})
+	specProps := specSection["properties"].(map[string]interface{})
+
+	// Verify parameters section exists with regular fields
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+
+	// Verify regular spec.parameters fields
+	if _, ok := paramProps["name"]; !ok {
+		t.Error("Expected 'name' field in spec.parameters")
+	}
+	if _, ok := paramProps["replicas"]; !ok {
+		t.Error("Expected 'replicas' field in spec.parameters")
+	}
+
+	// Verify spec path schemas are in spec (not in parameters)
+	if _, ok := specProps["customParameters"]; !ok {
+		t.Error("Expected 'customParameters' in spec properties")
+	}
+	if _, ok := specProps["writeConnectionSecretToRef"]; !ok {
+		t.Error("Expected 'writeConnectionSecretToRef' in spec properties")
+	}
+
+	// Check customParameters fields
+	customParams := specProps["customParameters"].(map[string]interface{})
+	customParamsProps := customParams["properties"].(map[string]interface{})
+	if _, ok := customParamsProps["customField1"]; !ok {
+		t.Error("Expected 'customField1' in customParameters")
+	}
+	if _, ok := customParamsProps["customField2"]; !ok {
+		t.Error("Expected 'customField2' in customParameters")
+	}
+
+	// Check customParameters required
+	customParamsRequired := customParams["required"].([]interface{})
+	if len(customParamsRequired) != 1 || customParamsRequired[0] != "customField1" {
+		t.Errorf("Expected customParameters.required to contain 'customField1', got %v", customParamsRequired)
+	}
+
+	// Check writeConnectionSecretToRef fields
+	connectionSecret := specProps["writeConnectionSecretToRef"].(map[string]interface{})
+	connectionSecretProps := connectionSecret["properties"].(map[string]interface{})
+	if _, ok := connectionSecretProps["name"]; !ok {
+		t.Error("Expected 'name' in writeConnectionSecretToRef")
+	}
+	if _, ok := connectionSecretProps["namespace"]; !ok {
+		t.Error("Expected 'namespace' in writeConnectionSecretToRef")
+	}
+
+	// Verify status section exists
+	statusSection := properties["status"].(map[string]interface{})
+	statusProps := statusSection["properties"].(map[string]interface{})
+	if _, ok := statusProps["ready"]; !ok {
+		t.Error("Expected 'ready' field in status")
+	}
+}
+
 
