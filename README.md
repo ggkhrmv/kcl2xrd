@@ -27,7 +27,7 @@ cd kcl2xrd && make build
 - **KCL runtime evaluation** - automatically evaluates metadata variables including format expressions, property access, and variable references
 - **Import support** - reuse central configuration files across multiple XRDs with KCL imports
 - **`@xrd` annotation** - mark parent schema, ignore unrelated code
-- **Validation annotations** - patterns, enums, ranges, string/numeric constraints, CEL expressions
+- **Validation annotations** - patterns, enums, ranges, string/numeric constraints, CEL expressions, oneOf/anyOf schema composition
 - **Kubernetes-specific annotations** - immutability, preserveUnknownFields, mapType, listType, listMapKeys, additionalProperties
 - **`@status` annotation** - separate status fields or define separate status schema for proper Crossplane resource state management
 - **Nested schema expansion** - automatic reference resolution
@@ -264,6 +264,66 @@ Restricts field to specific allowed values.
 status: str
 ```
 
+### Schema Composition Annotations
+
+#### `@oneOf([[fields]])`
+Specifies that exactly one of the given field combinations must be present. This is useful for mutually exclusive options.
+
+```kcl
+schema AccessControl:
+    groupName?: str
+    groupRef?: str
+    
+    # Exactly one of groupName or groupRef must be provided
+    # @oneOf([["groupName"], ["groupRef"]])
+    config: {str:str}
+```
+
+This generates:
+```yaml
+oneOf:
+  - required: ["groupName"]
+  - required: ["groupRef"]
+```
+
+#### `@anyOf([[fields]])`
+Specifies that at least one of the given field combinations must be present. This is useful for requiring at least one way to identify or configure something.
+
+```kcl
+schema User:
+    userEmail?: str
+    userObjectId?: str
+    
+    # At least one of userEmail or userObjectId must be provided
+    # @anyOf([["userEmail"], ["userObjectId"]])
+    userConfig: {str:str}
+```
+
+This generates:
+```yaml
+anyOf:
+  - required: ["userEmail"]
+  - required: ["userObjectId"]
+```
+
+#### Combined `@oneOf` and `@anyOf`
+You can use both annotations together for complex validation requirements:
+
+```kcl
+schema AccessControl:
+    groupName?: str
+    groupRef?: str
+    userEmail?: str
+    userObjectId?: str
+    
+    # Exactly one group identifier AND at least one user identifier
+    # @oneOf([["groupName"], ["groupRef"]])
+    # @anyOf([["userEmail"], ["userObjectId"]])
+    config: {str:str}
+```
+
+This generates both `oneOf` and `anyOf` constraints in the OpenAPI schema, ensuring proper validation of the resource configuration.
+
 ### Kubernetes-Specific Annotations
 
 #### `@immutable`
@@ -450,6 +510,17 @@ schema ValidatedResource:
     # CEL validation
     # @validate("self > 0", "Must be positive")
     value: int
+    
+    # oneOf/anyOf example for mutually exclusive options
+    groupName?: str
+    groupRef?: str
+    userEmail?: str
+    userObjectId?: str
+    
+    # Configuration requiring exactly one group identifier and at least one user identifier
+    # @oneOf([["groupName"], ["groupRef"]])
+    # @anyOf([["userEmail"], ["userObjectId"]])
+    accessConfig?: {str:str}
 ```
 
 ## Metadata Variables
@@ -795,6 +866,7 @@ See [`examples/`](examples/) directory:
 4. **dynatrace-with-metadata.k** - Full in-file metadata
 5. **preserve-unknown-fields.k** - Arbitrary properties with `{any:any}`
 6. **s3-bucket-with-policy.k** - Complex example with `any` type fields and IAM policies
+7. **oneof-anyof-example.k** - Schema composition with oneOf and anyOf validations
 
 ## Development
 
