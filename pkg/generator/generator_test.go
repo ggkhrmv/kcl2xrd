@@ -1601,3 +1601,106 @@ func TestGenerateXRDWithSpecPathSchemas(t *testing.T) {
 }
 
 
+
+func TestGenerateXRDWithItemsPreserveUnknownFields(t *testing.T) {
+schema := &parser.Schema{
+Name: "XMyApp",
+Fields: []parser.Field{
+{
+Name:     "name",
+Type:     "str",
+Required: true,
+},
+{
+Name:                       "filter",
+Type:                       "[{any:any}]",
+Required:                   true,
+PreserveUnknownFields:      true,
+},
+{
+Name:                       "configs",
+Type:                       "[{str:str}]",
+Required:                   true,
+ItemsPreserveUnknownFields: true,
+},
+{
+Name:                  "metadata",
+Type:                  "{any:any}",
+Required:              false,
+PreserveUnknownFields: true,
+},
+},
+}
+
+xrdYAML, err := GenerateXRD(schema, "example.org", "v1alpha1")
+if err != nil {
+t.Fatalf("GenerateXRD failed: %v", err)
+}
+
+// Check that it's valid YAML
+var xrd map[string]interface{}
+if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+t.Fatalf("Generated XRD is not valid YAML: %v", err)
+}
+
+// Navigate to the schema
+spec := xrd["spec"].(map[string]interface{})
+versions := spec["versions"].([]interface{})
+version := versions[0].(map[string]interface{})
+schema_obj := version["schema"].(map[string]interface{})
+openAPIV3Schema := schema_obj["openAPIV3Schema"].(map[string]interface{})
+properties := openAPIV3Schema["properties"].(map[string]interface{})
+specProp := properties["spec"].(map[string]interface{})
+specProps := specProp["properties"].(map[string]interface{})
+parameters := specProps["parameters"].(map[string]interface{})
+paramProps := parameters["properties"].(map[string]interface{})
+
+// Check filter field - should have x-kubernetes-preserve-unknown-fields only on items
+filter := paramProps["filter"].(map[string]interface{})
+if filter["type"] != "array" {
+t.Errorf("Expected type 'array' for filter, got '%v'", filter["type"])
+}
+
+// Filter should NOT have x-kubernetes-preserve-unknown-fields at array level
+if _, hasPreserve := filter["x-kubernetes-preserve-unknown-fields"]; hasPreserve {
+t.Error("Array 'filter' should not have x-kubernetes-preserve-unknown-fields")
+}
+
+// Filter items SHOULD have x-kubernetes-preserve-unknown-fields
+filterItems := filter["items"].(map[string]interface{})
+if filterItems["type"] != "object" {
+t.Errorf("Expected items type 'object' for filter, got '%v'", filterItems["type"])
+}
+if preserveVal, ok := filterItems["x-kubernetes-preserve-unknown-fields"]; !ok || preserveVal != true {
+t.Error("Filter items should have x-kubernetes-preserve-unknown-fields: true")
+}
+
+// Check configs field - should have x-kubernetes-preserve-unknown-fields only on items
+configs := paramProps["configs"].(map[string]interface{})
+if configs["type"] != "array" {
+t.Errorf("Expected type 'array' for configs, got '%v'", configs["type"])
+}
+
+// Configs should NOT have x-kubernetes-preserve-unknown-fields at array level
+if _, hasPreserve := configs["x-kubernetes-preserve-unknown-fields"]; hasPreserve {
+t.Error("Array 'configs' should not have x-kubernetes-preserve-unknown-fields")
+}
+
+// Configs items SHOULD have x-kubernetes-preserve-unknown-fields
+configsItems := configs["items"].(map[string]interface{})
+if configsItems["type"] != "object" {
+t.Errorf("Expected items type 'object' for configs, got '%v'", configsItems["type"])
+}
+if preserveVal, ok := configsItems["x-kubernetes-preserve-unknown-fields"]; !ok || preserveVal != true {
+t.Error("Configs items should have x-kubernetes-preserve-unknown-fields: true")
+}
+
+// Check metadata field - should have x-kubernetes-preserve-unknown-fields on the object itself
+metadata := paramProps["metadata"].(map[string]interface{})
+if metadata["type"] != "object" {
+t.Errorf("Expected type 'object' for metadata, got '%v'", metadata["type"])
+}
+if preserveVal, ok := metadata["x-kubernetes-preserve-unknown-fields"]; !ok || preserveVal != true {
+t.Error("Metadata object should have x-kubernetes-preserve-unknown-fields: true")
+}
+}

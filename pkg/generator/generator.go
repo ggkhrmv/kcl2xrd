@@ -424,7 +424,8 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 				Type: "object",
 			}
 			// Apply preserve unknown fields if annotation is present
-			if field.PreserveUnknownFields {
+			// Use ItemsPreserveUnknownFields first, fall back to PreserveUnknownFields for backward compatibility
+			if field.ItemsPreserveUnknownFields || field.PreserveUnknownFields {
 				preserve := true
 				elementSchema.XKubernetesPreserveUnknownFields = &preserve
 			}
@@ -434,6 +435,11 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 			// Apply itemsFormat if specified
 			if field.ItemsFormat != "" {
 				elementSchema.Format = field.ItemsFormat
+			}
+			// Apply itemsPreserveUnknownFields if specified
+			if field.ItemsPreserveUnknownFields {
+				preserve := true
+				elementSchema.XKubernetesPreserveUnknownFields = &preserve
 			}
 			schema.Items = &elementSchema
 		}
@@ -578,9 +584,15 @@ func applyFieldValidationsAndDefaults(field parser.Field, schema *PropertySchema
 		schema.XKubernetesImmutable = &immutable
 	}
 	
+	// Apply preserveUnknownFields, but skip for array types with [{any:any}] pattern
+	// as those are handled in the type conversion logic
 	if field.PreserveUnknownFields {
-		preserve := true
-		schema.XKubernetesPreserveUnknownFields = &preserve
+		// Don't apply to arrays with [{any:any}] pattern - it's applied to items instead
+		isArrayWithAnyAnyPattern := strings.HasPrefix(field.Type, "[") && strings.Contains(field.Type, "{any:any}")
+		if !isArrayWithAnyAnyPattern {
+			preserve := true
+			schema.XKubernetesPreserveUnknownFields = &preserve
+		}
 	}
 	
 	if field.AdditionalPropertiesAnnotation {

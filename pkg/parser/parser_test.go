@@ -1216,3 +1216,65 @@ func TestParseKCLFileWithDollarPrefixFields(t *testing.T) {
 }
 
 
+func TestParseKCLFileWithItemsPreserveUnknownFields(t *testing.T) {
+// Create a temporary test file with itemsPreserveUnknownFields annotation
+tempDir := t.TempDir()
+testFile := filepath.Join(tempDir, "test_items_preserve.k")
+
+content := `schema MyApp:
+    # @itemsPreserveUnknownFields
+    configs: [{str:str}]
+    
+    # @preserveUnknownFields
+    filter: [{any:any}]
+`
+
+if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+t.Fatalf("Failed to create test file: %v", err)
+}
+
+// Parse the file
+result, err := ParseKCLFileWithSchemas(testFile)
+if err != nil {
+t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+}
+
+schema := result.Primary
+if schema == nil {
+t.Fatal("Expected primary schema to be set")
+}
+
+// Check configs field has ItemsPreserveUnknownFields set
+var configsField *Field
+for i := range schema.Fields {
+if schema.Fields[i].Name == "configs" {
+configsField = &schema.Fields[i]
+break
+}
+}
+
+if configsField == nil {
+t.Fatal("Expected 'configs' field to be present")
+}
+
+if !configsField.ItemsPreserveUnknownFields {
+t.Error("Expected ItemsPreserveUnknownFields to be true for 'configs'")
+}
+
+// Check filter field has PreserveUnknownFields set (backward compatibility)
+var filterField *Field
+for i := range schema.Fields {
+if schema.Fields[i].Name == "filter" {
+filterField = &schema.Fields[i]
+break
+}
+}
+
+if filterField == nil {
+t.Fatal("Expected 'filter' field to be present")
+}
+
+if !filterField.PreserveUnknownFields {
+t.Error("Expected PreserveUnknownFields to be true for 'filter'")
+}
+}

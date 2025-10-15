@@ -79,6 +79,7 @@ type Field struct {
 	IsStatus              bool   // marks field as status field (goes in status section instead of spec)
 	IsSpec                bool   // marks field as spec-level field (goes directly under spec, not in spec.parameters)
 	AdditionalPropertiesAnnotation bool // @additionalProperties annotation
+	ItemsPreserveUnknownFields bool // @itemsPreserveUnknownFields - only applies to array items
 	// OneOf and AnyOf validations
 	OneOf [][]string // oneOf validation - array of required field combinations
 	AnyOf [][]string // anyOf validation - array of required field combinations
@@ -150,6 +151,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	immutableRegex := regexp.MustCompile(`@immutable`)
 	celValidationRegex := regexp.MustCompile(`@validate\s*\(\s*['"](.*?)['"]\s*(?:,\s*['"](.*?)['"]\s*)?\)`)
 	preserveUnknownFieldsRegex := regexp.MustCompile(`@preserveUnknownFields`)
+	itemsPreserveUnknownFieldsRegex := regexp.MustCompile(`@itemsPreserveUnknownFields`)
 	additionalPropertiesRegex := regexp.MustCompile(`@additionalProperties`)
 	mapTypeRegex := regexp.MustCompile(`@mapType\s*\(\s*['"](.*?)['"]\s*\)`)
 	listTypeRegex := regexp.MustCompile(`@listType\s*\(\s*['"](.*?)['"]\s*\)`)
@@ -388,7 +390,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				applyValidationAnnotations(&field, pendingAnnotations, 
 					patternRegex, minLengthRegex, maxLengthRegex, 
 					minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, itemsFormatRegex, enumRegex, immutableRegex, celValidationRegex,
-					preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, specAnnotationRegex, oneOfRegex, anyOfRegex)
+					preserveUnknownFieldsRegex, itemsPreserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, specAnnotationRegex, oneOfRegex, anyOfRegex)
 				pendingAnnotations = nil
 				
 				currentSchema.Fields = append(currentSchema.Fields, field)
@@ -445,7 +447,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 // applyValidationAnnotations applies validation annotations from comments to a field
 func applyValidationAnnotations(field *Field, annotations []string, 
 	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, itemsFormatRegex, enumRegex, immutableRegex, celValidationRegex,
-	preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, specAnnotationRegex, oneOfRegex, anyOfRegex *regexp.Regexp) {
+	preserveUnknownFieldsRegex, itemsPreserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, specAnnotationRegex, oneOfRegex, anyOfRegex *regexp.Regexp) {
 	
 	for _, annotation := range annotations {
 		// Check for pattern
@@ -539,6 +541,11 @@ func applyValidationAnnotations(field *Field, annotations []string,
 		// Check for preserveUnknownFields
 		if preserveUnknownFieldsRegex.MatchString(annotation) {
 			field.PreserveUnknownFields = true
+		}
+		
+		// Check for itemsPreserveUnknownFields
+		if itemsPreserveUnknownFieldsRegex.MatchString(annotation) {
+			field.ItemsPreserveUnknownFields = true
 		}
 		
 		// Check for additionalProperties

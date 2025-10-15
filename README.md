@@ -29,7 +29,7 @@ cd kcl2xrd && make build
 - **`@xrd` annotation** - mark parent schema, ignore unrelated code
 - **Field filtering with `$` prefix** - automatically omit KCL internal variables and keywords from XRD generation
 - **Validation annotations** - patterns, enums, ranges, string/numeric constraints, CEL expressions, oneOf/anyOf schema composition
-- **Kubernetes-specific annotations** - immutability, preserveUnknownFields, mapType, listType, listMapKeys, additionalProperties
+- **Kubernetes-specific annotations** - immutability, preserveUnknownFields (with granular control for array items), mapType, listType, listMapKeys, additionalProperties
 - **`@status` annotation** - separate status fields or define separate status schema for proper Crossplane resource state management
 - **`@spec` annotation** - define fields directly under `spec` (not `spec.parameters`) for Crossplane composition selectors and other spec-level fields
 - **`@spec.path` annotation** - define entire schemas as objects at custom paths under `spec` (e.g., `writeConnectionSecretToRef`, `publishConnectionDetailsTo`)
@@ -457,10 +457,56 @@ resourceId: str
 #### `@preserveUnknownFields`
 Allows arbitrary properties (sets `x-kubernetes-preserve-unknown-fields: true`). Typically used with `{any:any}` type.
 
+**For object fields:**
 ```kcl
 # @preserveUnknownFields
 config: {any:any}
 ```
+
+**For array fields with `[{any:any}]` pattern:**
+When used with `[{any:any}]`, the annotation applies only to the array **items**, not the array itself. This matches the desired behavior for Kubernetes CRDs where you want items to be flexible but the array structure to be strict.
+
+```kcl
+schema MyApp:
+    # @preserveUnknownFields
+    filter: [{any:any}]
+```
+
+This generates:
+```yaml
+filter:
+  type: array
+  items:
+    type: object
+    x-kubernetes-preserve-unknown-fields: true
+```
+
+Note: `x-kubernetes-preserve-unknown-fields` is on the items, NOT on the array itself.
+
+#### `@itemsPreserveUnknownFields`
+Applies `x-kubernetes-preserve-unknown-fields: true` only to array items, not the array itself. This provides explicit control for any array type.
+
+```kcl
+schema MyApp:
+    # @itemsPreserveUnknownFields
+    configs: [{str:str}]
+```
+
+This generates:
+```yaml
+configs:
+  type: array
+  items:
+    type: object
+    additionalProperties:
+      type: string
+    x-kubernetes-preserve-unknown-fields: true
+```
+
+**Use cases:**
+- Use `@preserveUnknownFields` on `[{any:any}]` for backward compatibility (applies to items)
+- Use `@itemsPreserveUnknownFields` for explicit control on any array type
+- Use `@preserveUnknownFields` on non-array fields to apply to the field itself
 
 #### `@mapType(type)`
 Sets `x-kubernetes-map-type`. Valid values: `"atomic"`, `"granular"`.
