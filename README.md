@@ -30,6 +30,7 @@ cd kcl2xrd && make build
 - **Validation annotations** - patterns, enums, ranges, string/numeric constraints, CEL expressions, oneOf/anyOf schema composition
 - **Kubernetes-specific annotations** - immutability, preserveUnknownFields, mapType, listType, listMapKeys, additionalProperties
 - **`@status` annotation** - separate status fields or define separate status schema for proper Crossplane resource state management
+- **`@spec` annotation** - define fields directly under `spec` (not `spec.parameters`) for Crossplane composition selectors and other spec-level fields
 - **Nested schema expansion** - automatic reference resolution
 - **`any` type support** - fields without type constraints for maximum flexibility (IAM policies, etc.)
 - **`{any:any}` syntax** - arbitrary property objects with `@preserveUnknownFields`
@@ -500,6 +501,68 @@ schema KafkaCluster:
 ```
 
 This generates a status section with just `x-kubernetes-preserve-unknown-fields: true`, allowing any status fields to be set dynamically.
+
+#### `@spec`
+Marks a field as a spec-level field, placing it directly under `spec` instead of `spec.parameters`. This is useful for Crossplane-specific fields like `compositionSelector`, `compositionRef`, or `compositionRevisionRef` that need to be at the spec level.
+
+**Basic usage:**
+
+```kcl
+schema MyComposite:
+    # Regular fields - go to spec.parameters
+    name: str
+    replicas?: int = 3
+    
+    # Spec-level fields - go directly under spec
+    # @spec
+    compositionSelector?: {str:str}
+    
+    # @spec
+    compositionRef?: str
+    
+    # @spec
+    # @immutable
+    compositionRevisionRef?: str
+```
+
+This generates an XRD with:
+```yaml
+spec:
+  properties:
+    parameters:
+      type: object
+      properties:
+        name:
+          type: string
+        replicas:
+          type: integer
+          default: 3
+      required:
+        - name
+    compositionSelector:
+      type: object
+      additionalProperties:
+        type: string
+    compositionRef:
+      type: string
+    compositionRevisionRef:
+      type: string
+      x-kubernetes-immutable: true
+  required:
+    - parameters
+```
+
+**Key points:**
+- Spec-level fields go directly under `spec`, not under `spec.parameters`
+- All validation annotations work with spec-level fields (`@immutable`, `@pattern`, etc.)
+- Required spec-level fields are added to `spec.required`
+- Useful for Crossplane composition-related fields
+
+**Common use cases:**
+- `compositionSelector` - Select composition based on labels
+- `compositionRef` - Reference a specific composition
+- `compositionRevisionRef` - Pin to a specific composition revision
+- Custom spec-level fields for advanced Crossplane features
 
 #### `@additionalProperties`
 Allows a field to accept additional properties beyond those defined in its schema. Sets `additionalProperties: true` on the field.

@@ -963,4 +963,112 @@ func TestParseKCLFileWithItemsFormat(t *testing.T) {
 	}
 }
 
+func TestParseKCLFileWithSpecAnnotation(t *testing.T) {
+	// Create a temporary test file with spec annotations
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test_spec.k")
+
+	content := `schema TestResource:
+    # Regular spec.parameters field
+    name: str
+    replicas?: int = 3
+    
+    # @spec
+    compositionSelector?: {str:str}
+    
+    # @spec
+    compositionRef?: str
+    
+    # @spec
+    # @immutable
+    compositionRevisionRef?: str
+    
+    # @status
+    ready: bool
+`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Parse the file
+	result, err := ParseKCLFileWithSchemas(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+	}
+
+	schema := result.Primary
+	if schema == nil {
+		t.Fatal("Expected primary schema to be set")
+	}
+
+	// Check number of fields
+	if len(schema.Fields) != 6 {
+		t.Errorf("Expected 6 fields, got %d", len(schema.Fields))
+	}
+
+	// Check name field (should NOT be spec or status)
+	nameField := schema.Fields[0]
+	if nameField.Name != "name" {
+		t.Errorf("Expected field name 'name', got '%s'", nameField.Name)
+	}
+	if nameField.IsSpec {
+		t.Error("Expected 'name' field to NOT be a spec-level field")
+	}
+	if nameField.IsStatus {
+		t.Error("Expected 'name' field to NOT be a status field")
+	}
+
+	// Check replicas field (should NOT be spec or status)
+	replicasField := schema.Fields[1]
+	if replicasField.Name != "replicas" {
+		t.Errorf("Expected field name 'replicas', got '%s'", replicasField.Name)
+	}
+	if replicasField.IsSpec {
+		t.Error("Expected 'replicas' field to NOT be a spec-level field")
+	}
+
+	// Check compositionSelector field (should be spec)
+	compositionSelectorField := schema.Fields[2]
+	if compositionSelectorField.Name != "compositionSelector" {
+		t.Errorf("Expected field name 'compositionSelector', got '%s'", compositionSelectorField.Name)
+	}
+	if !compositionSelectorField.IsSpec {
+		t.Error("Expected 'compositionSelector' field to be a spec-level field")
+	}
+
+	// Check compositionRef field (should be spec)
+	compositionRefField := schema.Fields[3]
+	if compositionRefField.Name != "compositionRef" {
+		t.Errorf("Expected field name 'compositionRef', got '%s'", compositionRefField.Name)
+	}
+	if !compositionRefField.IsSpec {
+		t.Error("Expected 'compositionRef' field to be a spec-level field")
+	}
+
+	// Check compositionRevisionRef field (should be spec and immutable)
+	compositionRevisionRefField := schema.Fields[4]
+	if compositionRevisionRefField.Name != "compositionRevisionRef" {
+		t.Errorf("Expected field name 'compositionRevisionRef', got '%s'", compositionRevisionRefField.Name)
+	}
+	if !compositionRevisionRefField.IsSpec {
+		t.Error("Expected 'compositionRevisionRef' field to be a spec-level field")
+	}
+	if !compositionRevisionRefField.Immutable {
+		t.Error("Expected 'compositionRevisionRef' field to be immutable")
+	}
+
+	// Check ready field (should be status, NOT spec)
+	readyField := schema.Fields[5]
+	if readyField.Name != "ready" {
+		t.Errorf("Expected field name 'ready', got '%s'", readyField.Name)
+	}
+	if !readyField.IsStatus {
+		t.Error("Expected 'ready' field to be a status field")
+	}
+	if readyField.IsSpec {
+		t.Error("Expected 'ready' field to NOT be a spec-level field")
+	}
+}
+
 
