@@ -580,6 +580,475 @@ func TestGenerateXRDWithMinItems(t *testing.T) {
 	}
 }
 
+func TestGenerateXRDWithOneOf(t *testing.T) {
+	schema := &parser.Schema{
+		Name: "TestResource",
+		Fields: []parser.Field{
+			{
+				Name:     "groupName",
+				Type:     "str",
+				Required: false,
+			},
+			{
+				Name:     "groupRef",
+				Type:     "str",
+				Required: false,
+			},
+			{
+				Name: "config",
+				Type: "{str:str}",
+				OneOf: [][]string{
+					{"groupName"},
+					{"groupRef"},
+				},
+			},
+		},
+	}
+
+	xrdYAML, err := GenerateXRDWithOptions(schema, XRDOptions{
+		Group:         "example.org",
+		Version:       "v1",
+		Served:        true,
+		Referenceable: true,
+	})
+	if err != nil {
+		t.Fatalf("GenerateXRDWithOptions failed: %v", err)
+	}
+
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Failed to unmarshal XRD: %v", err)
+	}
+
+	// Navigate to parameters schema
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	schema_obj := version["schema"].(map[string]interface{})
+	openAPIV3Schema := schema_obj["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPIV3Schema["properties"].(map[string]interface{})
+	specProp := properties["spec"].(map[string]interface{})
+	specProps := specProp["properties"].(map[string]interface{})
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+	config := paramProps["config"].(map[string]interface{})
+
+	// Check oneOf is present
+	if config["oneOf"] == nil {
+		t.Fatal("Expected oneOf to be set")
+	}
+
+	oneOf := config["oneOf"].([]interface{})
+	if len(oneOf) != 2 {
+		t.Errorf("Expected 2 oneOf schemas, got %d", len(oneOf))
+	}
+
+	// Check first oneOf entry
+	oneOf0 := oneOf[0].(map[string]interface{})
+	required0 := oneOf0["required"].([]interface{})
+	if len(required0) != 1 || required0[0] != "groupName" {
+		t.Errorf("Expected first oneOf to require 'groupName', got %v", required0)
+	}
+
+	// Check second oneOf entry
+	oneOf1 := oneOf[1].(map[string]interface{})
+	required1 := oneOf1["required"].([]interface{})
+	if len(required1) != 1 || required1[0] != "groupRef" {
+		t.Errorf("Expected second oneOf to require 'groupRef', got %v", required1)
+	}
+}
+
+func TestGenerateXRDWithAnyOf(t *testing.T) {
+	schema := &parser.Schema{
+		Name: "TestResource",
+		Fields: []parser.Field{
+			{
+				Name:     "userEmail",
+				Type:     "str",
+				Required: false,
+			},
+			{
+				Name:     "userObjectId",
+				Type:     "str",
+				Required: false,
+			},
+			{
+				Name: "userConfig",
+				Type: "{str:str}",
+				AnyOf: [][]string{
+					{"userEmail"},
+					{"userObjectId"},
+				},
+			},
+		},
+	}
+
+	xrdYAML, err := GenerateXRDWithOptions(schema, XRDOptions{
+		Group:         "example.org",
+		Version:       "v1",
+		Served:        true,
+		Referenceable: true,
+	})
+	if err != nil {
+		t.Fatalf("GenerateXRDWithOptions failed: %v", err)
+	}
+
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Failed to unmarshal XRD: %v", err)
+	}
+
+	// Navigate to parameters schema
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	schema_obj := version["schema"].(map[string]interface{})
+	openAPIV3Schema := schema_obj["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPIV3Schema["properties"].(map[string]interface{})
+	specProp := properties["spec"].(map[string]interface{})
+	specProps := specProp["properties"].(map[string]interface{})
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+	userConfig := paramProps["userConfig"].(map[string]interface{})
+
+	// Check anyOf is present
+	if userConfig["anyOf"] == nil {
+		t.Fatal("Expected anyOf to be set")
+	}
+
+	anyOf := userConfig["anyOf"].([]interface{})
+	if len(anyOf) != 2 {
+		t.Errorf("Expected 2 anyOf schemas, got %d", len(anyOf))
+	}
+
+	// Check first anyOf entry
+	anyOf0 := anyOf[0].(map[string]interface{})
+	required0 := anyOf0["required"].([]interface{})
+	if len(required0) != 1 || required0[0] != "userEmail" {
+		t.Errorf("Expected first anyOf to require 'userEmail', got %v", required0)
+	}
+
+	// Check second anyOf entry
+	anyOf1 := anyOf[1].(map[string]interface{})
+	required1 := anyOf1["required"].([]interface{})
+	if len(required1) != 1 || required1[0] != "userObjectId" {
+		t.Errorf("Expected second anyOf to require 'userObjectId', got %v", required1)
+	}
+}
+
+func TestGenerateXRDWithCombinedOneOfAndAnyOf(t *testing.T) {
+	schema := &parser.Schema{
+		Name: "TestResource",
+		Fields: []parser.Field{
+			{
+				Name:     "groupName",
+				Type:     "str",
+				Required: false,
+			},
+			{
+				Name:     "groupRef",
+				Type:     "str",
+				Required: false,
+			},
+			{
+				Name:     "userEmail",
+				Type:     "str",
+				Required: false,
+			},
+			{
+				Name:     "userObjectId",
+				Type:     "str",
+				Required: false,
+			},
+			{
+				Name: "config",
+				Type: "{str:str}",
+				OneOf: [][]string{
+					{"groupName"},
+					{"groupRef"},
+				},
+				AnyOf: [][]string{
+					{"userEmail"},
+					{"userObjectId"},
+				},
+			},
+		},
+	}
+
+	xrdYAML, err := GenerateXRDWithOptions(schema, XRDOptions{
+		Group:         "example.org",
+		Version:       "v1",
+		Served:        true,
+		Referenceable: true,
+	})
+	if err != nil {
+		t.Fatalf("GenerateXRDWithOptions failed: %v", err)
+	}
+
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Failed to unmarshal XRD: %v", err)
+	}
+
+	// Navigate to parameters schema
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	schema_obj := version["schema"].(map[string]interface{})
+	openAPIV3Schema := schema_obj["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPIV3Schema["properties"].(map[string]interface{})
+	specProp := properties["spec"].(map[string]interface{})
+	specProps := specProp["properties"].(map[string]interface{})
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+	config := paramProps["config"].(map[string]interface{})
+
+	// Check both oneOf and anyOf are present
+	if config["oneOf"] == nil {
+		t.Fatal("Expected oneOf to be set")
+	}
+	if config["anyOf"] == nil {
+		t.Fatal("Expected anyOf to be set")
+	}
+
+	oneOf := config["oneOf"].([]interface{})
+	if len(oneOf) != 2 {
+		t.Errorf("Expected 2 oneOf schemas, got %d", len(oneOf))
+	}
+
+	anyOf := config["anyOf"].([]interface{})
+	if len(anyOf) != 2 {
+		t.Errorf("Expected 2 anyOf schemas, got %d", len(anyOf))
+	}
+}
+
+func TestGenerateXRDWithSchemaLevelOneOf(t *testing.T) {
+	schema := &parser.Schema{
+		Name: "TestResource",
+		OneOf: [][]string{
+			{"groupName"},
+			{"groupRef"},
+		},
+		Fields: []parser.Field{
+			{
+				Name:     "groupName",
+				Type:     "str",
+				Required: false,
+			},
+			{
+				Name:     "groupRef",
+				Type:     "str",
+				Required: false,
+			},
+			{
+				Name:     "name",
+				Type:     "str",
+				Required: true,
+			},
+		},
+	}
+
+	xrdYAML, err := GenerateXRDWithOptions(schema, XRDOptions{
+		Group:         "example.org",
+		Version:       "v1",
+		Served:        true,
+		Referenceable: true,
+	})
+	if err != nil {
+		t.Fatalf("GenerateXRDWithOptions failed: %v", err)
+	}
+
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Failed to unmarshal XRD: %v", err)
+	}
+
+	// Navigate to parameters schema
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	schema_obj := version["schema"].(map[string]interface{})
+	openAPIV3Schema := schema_obj["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPIV3Schema["properties"].(map[string]interface{})
+	specProp := properties["spec"].(map[string]interface{})
+	specProps := specProp["properties"].(map[string]interface{})
+	parameters := specProps["parameters"].(map[string]interface{})
+
+	// Check oneOf is present at parameters level
+	if parameters["oneOf"] == nil {
+		t.Fatal("Expected oneOf to be set at parameters level")
+	}
+
+	oneOf := parameters["oneOf"].([]interface{})
+	if len(oneOf) != 2 {
+		t.Errorf("Expected 2 oneOf schemas, got %d", len(oneOf))
+	}
+
+	// Check first oneOf entry
+	oneOf0 := oneOf[0].(map[string]interface{})
+	required0 := oneOf0["required"].([]interface{})
+	if len(required0) != 1 || required0[0] != "groupName" {
+		t.Errorf("Expected first oneOf to require 'groupName', got %v", required0)
+	}
+
+	// Check second oneOf entry
+	oneOf1 := oneOf[1].(map[string]interface{})
+	required1 := oneOf1["required"].([]interface{})
+	if len(required1) != 1 || required1[0] != "groupRef" {
+		t.Errorf("Expected second oneOf to require 'groupRef', got %v", required1)
+	}
+}
+
+func TestGenerateXRDWithSchemaLevelAnyOf(t *testing.T) {
+	schema := &parser.Schema{
+		Name: "TestResource",
+		AnyOf: [][]string{
+			{"userEmail"},
+			{"userObjectId"},
+		},
+		Fields: []parser.Field{
+			{
+				Name:     "userEmail",
+				Type:     "str",
+				Required: false,
+			},
+			{
+				Name:     "userObjectId",
+				Type:     "str",
+				Required: false,
+			},
+			{
+				Name:     "name",
+				Type:     "str",
+				Required: true,
+			},
+		},
+	}
+
+	xrdYAML, err := GenerateXRDWithOptions(schema, XRDOptions{
+		Group:         "example.org",
+		Version:       "v1",
+		Served:        true,
+		Referenceable: true,
+	})
+	if err != nil {
+		t.Fatalf("GenerateXRDWithOptions failed: %v", err)
+	}
+
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Failed to unmarshal XRD: %v", err)
+	}
+
+	// Navigate to parameters schema
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	schema_obj := version["schema"].(map[string]interface{})
+	openAPIV3Schema := schema_obj["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPIV3Schema["properties"].(map[string]interface{})
+	specProp := properties["spec"].(map[string]interface{})
+	specProps := specProp["properties"].(map[string]interface{})
+	parameters := specProps["parameters"].(map[string]interface{})
+
+	// Check anyOf is present at parameters level
+	if parameters["anyOf"] == nil {
+		t.Fatal("Expected anyOf to be set at parameters level")
+	}
+
+	anyOf := parameters["anyOf"].([]interface{})
+	if len(anyOf) != 2 {
+		t.Errorf("Expected 2 anyOf schemas, got %d", len(anyOf))
+	}
+
+	// Check first anyOf entry
+	anyOf0 := anyOf[0].(map[string]interface{})
+	required0 := anyOf0["required"].([]interface{})
+	if len(required0) != 1 || required0[0] != "userEmail" {
+		t.Errorf("Expected first anyOf to require 'userEmail', got %v", required0)
+	}
+
+	// Check second anyOf entry
+	anyOf1 := anyOf[1].(map[string]interface{})
+	required1 := anyOf1["required"].([]interface{})
+	if len(required1) != 1 || required1[0] != "userObjectId" {
+		t.Errorf("Expected second anyOf to require 'userObjectId', got %v", required1)
+	}
+}
+
+func TestGenerateXRDWithItemsFormat(t *testing.T) {
+	schema := &parser.Schema{
+		Name: "TestResource",
+		Fields: []parser.Field{
+			{
+				Name:        "emails",
+				Type:        "[str]",
+				Required:    true,
+				ItemsFormat: "email",
+			},
+			{
+				Name:        "ids",
+				Type:        "[str]",
+				Required:    false,
+				ItemsFormat: "uuid",
+			},
+		},
+	}
+
+	xrdYAML, err := GenerateXRDWithOptions(schema, XRDOptions{
+		Group:         "example.org",
+		Version:       "v1",
+		Served:        true,
+		Referenceable: true,
+	})
+	if err != nil {
+		t.Fatalf("GenerateXRDWithOptions failed: %v", err)
+	}
+
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Failed to unmarshal XRD: %v", err)
+	}
+
+	// Navigate to parameters schema
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	schema_obj := version["schema"].(map[string]interface{})
+	openAPIV3Schema := schema_obj["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPIV3Schema["properties"].(map[string]interface{})
+	specProp := properties["spec"].(map[string]interface{})
+	specProps := specProp["properties"].(map[string]interface{})
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+
+	// Check emails field
+	emails := paramProps["emails"].(map[string]interface{})
+	if emails["type"] != "array" {
+		t.Errorf("Expected type 'array' for emails, got '%v'", emails["type"])
+	}
+	emailsItems := emails["items"].(map[string]interface{})
+	if emailsItems["type"] != "string" {
+		t.Errorf("Expected items type 'string' for emails, got '%v'", emailsItems["type"])
+	}
+	if emailsItems["format"] != "email" {
+		t.Errorf("Expected items format 'email' for emails, got '%v'", emailsItems["format"])
+	}
+
+	// Check ids field
+	ids := paramProps["ids"].(map[string]interface{})
+	if ids["type"] != "array" {
+		t.Errorf("Expected type 'array' for ids, got '%v'", ids["type"])
+	}
+	idsItems := ids["items"].(map[string]interface{})
+	if idsItems["type"] != "string" {
+		t.Errorf("Expected items type 'string' for ids, got '%v'", idsItems["type"])
+	}
+	if idsItems["format"] != "uuid" {
+		t.Errorf("Expected items format 'uuid' for ids, got '%v'", idsItems["format"])
+	}
+}
+
 func TestGenerateXRDWithStatusFields(t *testing.T) {
 	schema := &parser.Schema{
 		Name:        "MyResource",

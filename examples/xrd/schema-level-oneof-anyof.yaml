@@ -1,0 +1,54 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: useraccounts.identity.example.org
+spec:
+  group: identity.example.org
+  names:
+    kind: UserAccount
+    plural: useraccounts
+  versions:
+    - name: v1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    displayName:
+                      type: string
+                      description: User's display name
+                    emailAddress:
+                      type: string
+                      description: Email address for the user
+                    password:
+                      type: string
+                      description: Password authentication
+                    sshKey:
+                      type: string
+                      description: SSH key authentication
+                    userId:
+                      type: string
+                      description: User ID number
+                  required:
+                    - displayName
+                  oneOf:
+                    - required:
+                        - emailAddress
+                    - required:
+                        - userId
+                  anyOf:
+                    - required:
+                        - password
+                    - required:
+                        - sshKey
+              required:
+                - parameters
+          required:
+            - spec

@@ -1,0 +1,63 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: accesscontrols.security.example.org
+spec:
+  group: security.example.org
+  names:
+    kind: AccessControl
+    plural: accesscontrols
+  versions:
+    - name: v1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    config:
+                      type: object
+                      description: Configuration with oneOf and anyOf constraints
+                      additionalProperties:
+                        type: string
+                      oneOf:
+                        - required:
+                            - groupName
+                        - required:
+                            - groupRef
+                      anyOf:
+                        - required:
+                            - userEmail
+                        - required:
+                            - userObjectId
+                    groupName:
+                      type: string
+                      description: Group identification - exactly one required
+                    groupRef:
+                      type: string
+                    permission:
+                      type: string
+                      description: Permission level
+                      default: read
+                      enum:
+                        - read
+                        - write
+                        - admin
+                    userEmail:
+                      type: string
+                      description: User identification - at least one required
+                    userObjectId:
+                      type: string
+                  required:
+                    - permission
+                    - config
+              required:
+                - parameters
+          required:
+            - spec

@@ -107,6 +107,8 @@ type PropertySchema struct {
 	MinItems                     *int            `yaml:"minItems,omitempty"`
 	MaxItems                     *int            `yaml:"maxItems,omitempty"`
 	Enum                         []string        `yaml:"enum,omitempty"`
+	OneOf                        []PropertySchema `yaml:"oneOf,omitempty"`
+	AnyOf                        []PropertySchema `yaml:"anyOf,omitempty"`
 	XKubernetesValidations       []K8sValidation `yaml:"x-kubernetes-validations,omitempty"`
 	XKubernetesImmutable         *bool           `yaml:"x-kubernetes-immutable,omitempty"`
 	XKubernetesPreserveUnknownFields *bool       `yaml:"x-kubernetes-preserve-unknown-fields,omitempty"`
@@ -279,6 +281,25 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 		}
 	}
 
+	// Apply schema-level oneOf/anyOf to parameters
+	if len(schema.OneOf) > 0 {
+		for _, requiredFields := range schema.OneOf {
+			oneOfSchema := PropertySchema{
+				Required: requiredFields,
+			}
+			parametersSchema.OneOf = append(parametersSchema.OneOf, oneOfSchema)
+		}
+	}
+	
+	if len(schema.AnyOf) > 0 {
+		for _, requiredFields := range schema.AnyOf {
+			anyOfSchema := PropertySchema{
+				Required: requiredFields,
+			}
+			parametersSchema.AnyOf = append(parametersSchema.AnyOf, anyOfSchema)
+		}
+	}
+
 	// Add spec section with parameters
 	specSchema := PropertySchema{
 		Type: "object",
@@ -363,6 +384,10 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 			schema.Items = &elementSchema
 		} else {
 			elementSchema := convertFieldToPropertySchemaWithSchemas(parser.Field{Type: elementType}, schemas)
+			// Apply itemsFormat if specified
+			if field.ItemsFormat != "" {
+				elementSchema.Format = field.ItemsFormat
+			}
 			schema.Items = &elementSchema
 		}
 	case strings.HasPrefix(field.Type, "{") && strings.Contains(field.Type, ":"):
@@ -535,6 +560,26 @@ func applyFieldValidationsAndDefaults(field parser.Field, schema *PropertySchema
 				Message: celVal.Message,
 			}
 			schema.XKubernetesValidations = append(schema.XKubernetesValidations, k8sVal)
+		}
+	}
+	
+	// Apply OneOf validations
+	if len(field.OneOf) > 0 {
+		for _, requiredFields := range field.OneOf {
+			oneOfSchema := PropertySchema{
+				Required: requiredFields,
+			}
+			schema.OneOf = append(schema.OneOf, oneOfSchema)
+		}
+	}
+	
+	// Apply AnyOf validations
+	if len(field.AnyOf) > 0 {
+		for _, requiredFields := range field.AnyOf {
+			anyOfSchema := PropertySchema{
+				Required: requiredFields,
+			}
+			schema.AnyOf = append(schema.AnyOf, anyOfSchema)
 		}
 	}
 }

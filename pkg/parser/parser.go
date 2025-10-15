@@ -18,6 +18,9 @@ type Schema struct {
 	Fields      []Field
 	IsXRD       bool   // marked with @xrd annotation
 	IsStatus    bool   // marked with @status annotation - used as status schema
+	// Schema-level OneOf and AnyOf validations (apply to parameters object)
+	OneOf [][]string // oneOf validation - array of required field combinations
+	AnyOf [][]string // anyOf validation - array of required field combinations
 }
 
 // ParseResult contains all schemas parsed from a file
@@ -63,6 +66,7 @@ type Field struct {
 	MinItems    *int   // minimum number of items in arrays
 	MaxItems    *int   // maximum number of items in arrays
 	Format      string // format for strings (e.g., "date-time")
+	ItemsFormat string // format for array items (e.g., "email" for [str] arrays)
 	Enum        []string // enumeration of allowed values
 	Immutable   bool   // x-kubernetes-immutable marker
 	CELValidations []CELValidation // CEL validation rules
@@ -73,6 +77,9 @@ type Field struct {
 	ListMapKeys           []string // x-kubernetes-list-map-keys
 	IsStatus              bool   // marks field as status field (goes in status section instead of spec)
 	AdditionalPropertiesAnnotation bool // @additionalProperties annotation
+	// OneOf and AnyOf validations
+	OneOf [][]string // oneOf validation - array of required field combinations
+	AnyOf [][]string // anyOf validation - array of required field combinations
 }
 
 // CELValidation represents a CEL validation rule
@@ -136,6 +143,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	minItemsRegex := regexp.MustCompile(`@minItems\s*\(\s*(\d+)\s*\)`)
 	maxItemsRegex := regexp.MustCompile(`@maxItems\s*\(\s*(\d+)\s*\)`)
 	formatRegex := regexp.MustCompile(`@format\s*\(\s*['"](.*?)['"]\s*\)`)
+	itemsFormatRegex := regexp.MustCompile(`@itemsFormat\s*\(\s*['"](.*?)['"]\s*\)`)
 	enumRegex := regexp.MustCompile(`@enum\s*\(\s*\[(.*?)\]\s*\)`)
 	immutableRegex := regexp.MustCompile(`@immutable`)
 	celValidationRegex := regexp.MustCompile(`@validate\s*\(\s*['"](.*?)['"]\s*(?:,\s*['"](.*?)['"]\s*)?\)`)
@@ -146,6 +154,8 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	listMapKeysRegex := regexp.MustCompile(`@listMapKeys\s*\(\s*\[(.*?)\]\s*\)`)
 	statusAnnotationRegex := regexp.MustCompile(`@status`)
 	xrdAnnotationRegex := regexp.MustCompile(`@xrd`)
+	oneOfRegex := regexp.MustCompile(`@oneOf\s*\(\s*\[(.*?)\]\s*\)`)
+	anyOfRegex := regexp.MustCompile(`@anyOf\s*\(\s*\[(.*?)\]\s*\)`)
 	
 	var pendingAnnotations []string
 	var pendingComments []string
@@ -299,6 +309,14 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				if statusAnnotationRegex.MatchString(annotation) {
 					currentSchema.IsStatus = true
 				}
+				// Check for schema-level oneOf
+				if matches := oneOfRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+					currentSchema.OneOf = parseRequiredCombinations(matches[1])
+				}
+				// Check for schema-level anyOf
+				if matches := anyOfRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+					currentSchema.AnyOf = parseRequiredCombinations(matches[1])
+				}
 			}
 			pendingAnnotations = nil
 			pendingComments = nil
@@ -353,8 +371,8 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				// Apply validation annotations from pending comments
 				applyValidationAnnotations(&field, pendingAnnotations, 
 					patternRegex, minLengthRegex, maxLengthRegex, 
-					minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, enumRegex, immutableRegex, celValidationRegex,
-					preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex)
+					minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, itemsFormatRegex, enumRegex, immutableRegex, celValidationRegex,
+					preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, oneOfRegex, anyOfRegex)
 				pendingAnnotations = nil
 				
 				currentSchema.Fields = append(currentSchema.Fields, field)
@@ -410,8 +428,8 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 
 // applyValidationAnnotations applies validation annotations from comments to a field
 func applyValidationAnnotations(field *Field, annotations []string, 
-	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, enumRegex, immutableRegex, celValidationRegex,
-	preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex *regexp.Regexp) {
+	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, itemsFormatRegex, enumRegex, immutableRegex, celValidationRegex,
+	preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, oneOfRegex, anyOfRegex *regexp.Regexp) {
 	
 	for _, annotation := range annotations {
 		// Check for pattern
@@ -464,6 +482,11 @@ func applyValidationAnnotations(field *Field, annotations []string,
 		// Check for format
 		if matches := formatRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			field.Format = matches[1]
+		}
+		
+		// Check for itemsFormat
+		if matches := itemsFormatRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+			field.ItemsFormat = matches[1]
 		}
 		
 		// Check for enum
@@ -533,7 +556,80 @@ func applyValidationAnnotations(field *Field, annotations []string,
 		if statusAnnotationRegex.MatchString(annotation) {
 			field.IsStatus = true
 		}
+		
+		// Check for oneOf
+		if matches := oneOfRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+			field.OneOf = parseRequiredCombinations(matches[1])
+		}
+		
+		// Check for anyOf
+		if matches := anyOfRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+			field.AnyOf = parseRequiredCombinations(matches[1])
+		}
 	}
+}
+
+// parseRequiredCombinations parses oneOf/anyOf annotation content
+// Example: [["groupName"], ["groupRef"]] or [["userEmail"], ["userObjectId"]]
+func parseRequiredCombinations(content string) [][]string {
+	var result [][]string
+	
+	// Remove outer brackets and split by "],["
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return result
+	}
+	
+	// Split into individual combinations like ["field1"], ["field2"]
+	// We need to handle nested brackets properly
+	var current strings.Builder
+	depth := 0
+	var combinations []string
+	
+	for _, ch := range content {
+		if ch == '[' {
+			depth++
+			if depth > 1 {
+				current.WriteRune(ch)
+			}
+		} else if ch == ']' {
+			depth--
+			if depth > 0 {
+				current.WriteRune(ch)
+			} else if depth == 0 {
+				// End of a combination
+				combo := strings.TrimSpace(current.String())
+				if combo != "" {
+					combinations = append(combinations, combo)
+				}
+				current.Reset()
+			}
+		} else if ch == ',' && depth == 1 {
+			// Skip commas between combinations at top level
+			continue
+		} else if depth > 0 {
+			current.WriteRune(ch)
+		}
+	}
+	
+	// Parse each combination
+	for _, combo := range combinations {
+		var fields []string
+		// Parse ["field1", "field2"] format
+		fieldStrs := strings.Split(combo, ",")
+		for _, fieldStr := range fieldStrs {
+			fieldStr = strings.TrimSpace(fieldStr)
+			fieldStr = strings.Trim(fieldStr, `"'`)
+			if fieldStr != "" {
+				fields = append(fields, fieldStr)
+			}
+		}
+		if len(fields) > 0 {
+			result = append(result, fields)
+		}
+	}
+	
+	return result
 }
 
 // splitPrinterColumns splits printer columns string respecting quoted strings
