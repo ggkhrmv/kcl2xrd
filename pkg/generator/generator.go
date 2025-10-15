@@ -225,20 +225,41 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 
 	// Build the spec.parameters structure and status structure
 	parametersSchema := PropertySchema{
-		Type:                 "object",
-		Properties:           make(map[string]PropertySchema),
-		Required:             []string{},
-		AdditionalProperties: true,
+		Type:       "object",
+		Properties: make(map[string]PropertySchema),
+		Required:   []string{},
 	}
 	
 	statusSchema := PropertySchema{
-		Type:                 "object",
-		Properties:           make(map[string]PropertySchema),
-		Required:             []string{},
-		AdditionalProperties: true,
+		Type:       "object",
+		Properties: make(map[string]PropertySchema),
+		Required:   []string{},
 	}
 	
 	hasStatusFields := false
+	
+	// Check if there's a separate status schema
+	var statusSchemaObj *parser.Schema
+	if schemas != nil {
+		for _, s := range schemas {
+			if s.IsStatus {
+				statusSchemaObj = s
+				break
+			}
+		}
+	}
+	
+	// If there's a separate status schema, use its fields for status
+	if statusSchemaObj != nil {
+		for _, field := range statusSchemaObj.Fields {
+			propSchema := convertFieldToPropertySchemaWithSchemas(field, schemas)
+			statusSchema.Properties[field.Name] = propSchema
+			if field.Required {
+				statusSchema.Required = append(statusSchema.Required, field.Name)
+			}
+			hasStatusFields = true
+		}
+	}
 
 	for _, field := range schema.Fields {
 		propSchema := convertFieldToPropertySchemaWithSchemas(field, schemas)
@@ -481,6 +502,10 @@ func applyFieldValidationsAndDefaults(field parser.Field, schema *PropertySchema
 	if field.PreserveUnknownFields {
 		preserve := true
 		schema.XKubernetesPreserveUnknownFields = &preserve
+	}
+	
+	if field.AdditionalPropertiesAnnotation {
+		schema.AdditionalProperties = true
 	}
 	
 	if field.MapType != "" {

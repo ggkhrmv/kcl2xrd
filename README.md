@@ -28,8 +28,8 @@ cd kcl2xrd && make build
 - **Import support** - reuse central configuration files across multiple XRDs with KCL imports
 - **`@xrd` annotation** - mark parent schema, ignore unrelated code
 - **Validation annotations** - patterns, enums, ranges, string/numeric constraints, CEL expressions
-- **Kubernetes-specific annotations** - immutability, preserveUnknownFields, mapType, listType, listMapKeys
-- **`@status` annotation** - separate status fields from spec for proper Crossplane resource state management
+- **Kubernetes-specific annotations** - immutability, preserveUnknownFields, mapType, listType, listMapKeys, additionalProperties
+- **`@status` annotation** - separate status fields or define separate status schema for proper Crossplane resource state management
 - **Nested schema expansion** - automatic reference resolution
 - **`any` type support** - fields without type constraints for maximum flexibility (IAM policies, etc.)
 - **`{any:any}` syntax** - arbitrary property objects with `@preserveUnknownFields`
@@ -286,6 +286,8 @@ items: [Item]
 #### `@status`
 Marks a field as a status field, placing it in the `status` section of the XRD instead of `spec.parameters`. Status fields represent the observed state of the resource rather than the desired state.
 
+**Option 1: Status fields in main schema**
+
 ```kcl
 schema Database:
     # Spec fields (desired state)
@@ -304,9 +306,26 @@ schema Database:
     endpoint?: str
 ```
 
+**Option 2: Separate status schema (recommended)**
+
+You can define status as a separate schema marked with `@status`:
+
+```kcl
+# @xrd
+schema Application:
+    name: str
+    replicas: int
+
+# @status
+schema AppStatus:
+    ready: bool
+    phase?: str
+    endpoint?: str
+```
+
 This generates an XRD with separate `spec` and `status` sections:
-- Spec fields go to `spec.parameters` with `additionalProperties: true`
-- Status fields go to `status` (sibling to `spec`) with `additionalProperties: true`
+- Spec fields go to `spec.parameters`
+- Status fields go to `status` (sibling to `spec`)
 - All validation and Kubernetes annotations work with status fields
 
 **Empty Status with Preserve Unknown Fields:**
@@ -324,6 +343,27 @@ schema KafkaCluster:
 ```
 
 This generates a status section with just `x-kubernetes-preserve-unknown-fields: true`, allowing any status fields to be set dynamically.
+
+#### `@additionalProperties`
+Allows a field to accept additional properties beyond those defined in its schema. Sets `additionalProperties: true` on the field.
+
+```kcl
+schema Config:
+    # Accept any additional string properties
+    # @additionalProperties
+    settings: {str:str}
+    
+    # @status
+    # @additionalProperties
+    metrics?: {str:int}
+```
+
+This generates:
+```yaml
+settings:
+  type: object
+  additionalProperties: true
+```
 
 ### CEL Validation
 

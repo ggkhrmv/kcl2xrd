@@ -16,7 +16,8 @@ type Schema struct {
 	Name        string
 	Description string
 	Fields      []Field
-	IsXRD       bool // marked with @xrd annotation
+	IsXRD       bool   // marked with @xrd annotation
+	IsStatus    bool   // marked with @status annotation - used as status schema
 }
 
 // ParseResult contains all schemas parsed from a file
@@ -69,6 +70,7 @@ type Field struct {
 	ListType              string // x-kubernetes-list-type
 	ListMapKeys           []string // x-kubernetes-list-map-keys
 	IsStatus              bool   // marks field as status field (goes in status section instead of spec)
+	AdditionalPropertiesAnnotation bool // @additionalProperties annotation
 }
 
 // CELValidation represents a CEL validation rule
@@ -134,6 +136,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	immutableRegex := regexp.MustCompile(`@immutable`)
 	celValidationRegex := regexp.MustCompile(`@validate\s*\(\s*['"](.*?)['"]\s*(?:,\s*['"](.*?)['"]\s*)?\)`)
 	preserveUnknownFieldsRegex := regexp.MustCompile(`@preserveUnknownFields`)
+	additionalPropertiesRegex := regexp.MustCompile(`@additionalProperties`)
 	mapTypeRegex := regexp.MustCompile(`@mapType\s*\(\s*['"](.*?)['"]\s*\)`)
 	listTypeRegex := regexp.MustCompile(`@listType\s*\(\s*['"](.*?)['"]\s*\)`)
 	listMapKeysRegex := regexp.MustCompile(`@listMapKeys\s*\(\s*\[(.*?)\]\s*\)`)
@@ -284,11 +287,13 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				Fields: []Field{},
 			}
 			
-			// Check if this schema is marked with @xrd annotation
+			// Check if this schema is marked with @xrd or @status annotation
 			for _, annotation := range pendingAnnotations {
 				if xrdAnnotationRegex.MatchString(annotation) {
 					currentSchema.IsXRD = true
-					break
+				}
+				if statusAnnotationRegex.MatchString(annotation) {
+					currentSchema.IsStatus = true
 				}
 			}
 			pendingAnnotations = nil
@@ -345,7 +350,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				applyValidationAnnotations(&field, pendingAnnotations, 
 					patternRegex, minLengthRegex, maxLengthRegex, 
 					minimumRegex, maximumRegex, minItemsRegex, enumRegex, immutableRegex, celValidationRegex,
-					preserveUnknownFieldsRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex)
+					preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex)
 				pendingAnnotations = nil
 				
 				currentSchema.Fields = append(currentSchema.Fields, field)
@@ -402,7 +407,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 // applyValidationAnnotations applies validation annotations from comments to a field
 func applyValidationAnnotations(field *Field, annotations []string, 
 	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, minItemsRegex, enumRegex, immutableRegex, celValidationRegex,
-	preserveUnknownFieldsRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex *regexp.Regexp) {
+	preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex *regexp.Regexp) {
 	
 	for _, annotation := range annotations {
 		// Check for pattern
@@ -479,6 +484,11 @@ func applyValidationAnnotations(field *Field, annotations []string,
 		// Check for preserveUnknownFields
 		if preserveUnknownFieldsRegex.MatchString(annotation) {
 			field.PreserveUnknownFields = true
+		}
+		
+		// Check for additionalProperties
+		if additionalPropertiesRegex.MatchString(annotation) {
+			field.AdditionalPropertiesAnnotation = true
 		}
 		
 		// Check for mapType
