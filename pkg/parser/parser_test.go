@@ -569,3 +569,130 @@ func TestParseKCLFileWithStatusAnnotation(t *testing.T) {
 	}
 }
 
+func TestParseKCLFileWithMaxItems(t *testing.T) {
+	// Test that @maxItems annotation is properly parsed
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.k")
+	
+	content := `schema TestSchema:
+    # @maxItems(5)
+    tags: [str]
+    
+    # @minItems(1)
+    # @maxItems(10)
+    items?: [str]
+`
+	
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	
+	result, err := ParseKCLFileWithSchemas(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+	}
+	
+	schema := result.Schemas["TestSchema"]
+	if schema == nil {
+		t.Fatal("Expected TestSchema to be parsed")
+	}
+	
+	// Check tags field
+	if len(schema.Fields) < 1 {
+		t.Fatal("Expected at least 1 field")
+	}
+	tagsField := schema.Fields[0]
+	if tagsField.Name != "tags" {
+		t.Errorf("Expected field name 'tags', got '%s'", tagsField.Name)
+	}
+	if tagsField.MaxItems == nil || *tagsField.MaxItems != 5 {
+		t.Error("Expected maxItems of 5 for tags field")
+	}
+	
+	// Check items field
+	if len(schema.Fields) < 2 {
+		t.Fatal("Expected at least 2 fields")
+	}
+	itemsField := schema.Fields[1]
+	if itemsField.Name != "items" {
+		t.Errorf("Expected field name 'items', got '%s'", itemsField.Name)
+	}
+	if itemsField.MinItems == nil || *itemsField.MinItems != 1 {
+		t.Error("Expected minItems of 1 for items field")
+	}
+	if itemsField.MaxItems == nil || *itemsField.MaxItems != 10 {
+		t.Error("Expected maxItems of 10 for items field")
+	}
+}
+
+func TestParseKCLFileWithFormat(t *testing.T) {
+	// Test that @format annotation is properly parsed
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.k")
+	
+	content := `schema TestSchema:
+    # @format("date-time")
+    createdAt: str
+    
+    # @format("email")
+    # @pattern("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")
+    email: str
+    
+    # @format("uuid")
+    id: str
+`
+	
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	
+	result, err := ParseKCLFileWithSchemas(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+	}
+	
+	schema := result.Schemas["TestSchema"]
+	if schema == nil {
+		t.Fatal("Expected TestSchema to be parsed")
+	}
+	
+	// Check createdAt field
+	if len(schema.Fields) < 1 {
+		t.Fatal("Expected at least 1 field")
+	}
+	createdAtField := schema.Fields[0]
+	if createdAtField.Name != "createdAt" {
+		t.Errorf("Expected field name 'createdAt', got '%s'", createdAtField.Name)
+	}
+	if createdAtField.Format != "date-time" {
+		t.Errorf("Expected format 'date-time' for createdAt field, got '%s'", createdAtField.Format)
+	}
+	
+	// Check email field
+	if len(schema.Fields) < 2 {
+		t.Fatal("Expected at least 2 fields")
+	}
+	emailField := schema.Fields[1]
+	if emailField.Name != "email" {
+		t.Errorf("Expected field name 'email', got '%s'", emailField.Name)
+	}
+	if emailField.Format != "email" {
+		t.Errorf("Expected format 'email' for email field, got '%s'", emailField.Format)
+	}
+	if emailField.Pattern == "" {
+		t.Error("Expected pattern to be set for email field")
+	}
+	
+	// Check id field
+	if len(schema.Fields) < 3 {
+		t.Fatal("Expected at least 3 fields")
+	}
+	idField := schema.Fields[2]
+	if idField.Name != "id" {
+		t.Errorf("Expected field name 'id', got '%s'", idField.Name)
+	}
+	if idField.Format != "uuid" {
+		t.Errorf("Expected format 'uuid' for id field, got '%s'", idField.Format)
+	}
+}
+

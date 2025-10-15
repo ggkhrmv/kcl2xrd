@@ -710,4 +710,161 @@ func TestGenerateXRDWithStatusFields(t *testing.T) {
 	}
 }
 
+func TestGenerateXRDWithMaxItems(t *testing.T) {
+	// Test that @maxItems annotation is properly applied to array fields
+	maxItems1 := 5
+	maxItems2 := 10
+	minItems := 1
+	schema := &parser.Schema{
+		Name: "TestMaxItems",
+		Fields: []parser.Field{
+			{
+				Name:     "tags",
+				Type:     "[str]",
+				Required: true,
+				MaxItems: &maxItems1,
+			},
+			{
+				Name:     "items",
+				Type:     "[str]",
+				Required: false,
+				MinItems: &minItems,
+				MaxItems: &maxItems2,
+			},
+		},
+	}
+
+	xrdYAML, err := GenerateXRD(schema, "example.org", "v1alpha1")
+	if err != nil {
+		t.Fatalf("GenerateXRD failed: %v", err)
+	}
+
+	// Parse the YAML
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Generated XRD is not valid YAML: %v", err)
+	}
+
+	// Navigate to parameters properties
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	versionSchema := version["schema"].(map[string]interface{})
+	openAPISchema := versionSchema["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPISchema["properties"].(map[string]interface{})
+	specProp := properties["spec"].(map[string]interface{})
+	specProps := specProp["properties"].(map[string]interface{})
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+
+	// Check tags field
+	tags := paramProps["tags"].(map[string]interface{})
+	if tags["type"] != "array" {
+		t.Errorf("Expected type 'array' for tags, got '%v'", tags["type"])
+	}
+	maxItemsValue := tags["maxItems"]
+	if maxItemsValue == nil {
+		t.Error("Expected maxItems to be set for tags field")
+	} else if maxItemsValue != 5 {
+		t.Errorf("Expected maxItems 5 for tags field, got %v", maxItemsValue)
+	}
+
+	// Check items field
+	items := paramProps["items"].(map[string]interface{})
+	if items["type"] != "array" {
+		t.Errorf("Expected type 'array' for items, got '%v'", items["type"])
+	}
+	minItemsValue := items["minItems"]
+	if minItemsValue == nil {
+		t.Error("Expected minItems to be set for items field")
+	} else if minItemsValue != 1 {
+		t.Errorf("Expected minItems 1 for items field, got %v", minItemsValue)
+	}
+	maxItemsValue = items["maxItems"]
+	if maxItemsValue == nil {
+		t.Error("Expected maxItems to be set for items field")
+	} else if maxItemsValue != 10 {
+		t.Errorf("Expected maxItems 10 for items field, got %v", maxItemsValue)
+	}
+}
+
+func TestGenerateXRDWithFormat(t *testing.T) {
+	// Test that @format annotation is properly applied to string fields
+	schema := &parser.Schema{
+		Name: "TestFormat",
+		Fields: []parser.Field{
+			{
+				Name:     "createdAt",
+				Type:     "str",
+				Required: true,
+				Format:   "date-time",
+			},
+			{
+				Name:   "email",
+				Type:   "str",
+				Format: "email",
+				Pattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+			},
+			{
+				Name:   "id",
+				Type:   "str",
+				Format: "uuid",
+			},
+		},
+	}
+
+	xrdYAML, err := GenerateXRD(schema, "example.org", "v1alpha1")
+	if err != nil {
+		t.Fatalf("GenerateXRD failed: %v", err)
+	}
+
+	// Parse the YAML
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Generated XRD is not valid YAML: %v", err)
+	}
+
+	// Navigate to parameters properties
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	versionSchema := version["schema"].(map[string]interface{})
+	openAPISchema := versionSchema["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPISchema["properties"].(map[string]interface{})
+	specProp := properties["spec"].(map[string]interface{})
+	specProps := specProp["properties"].(map[string]interface{})
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+
+	// Check createdAt field
+	createdAt := paramProps["createdAt"].(map[string]interface{})
+	if createdAt["type"] != "string" {
+		t.Errorf("Expected type 'string' for createdAt, got '%v'", createdAt["type"])
+	}
+	if createdAt["format"] != "date-time" {
+		t.Errorf("Expected format 'date-time' for createdAt, got '%v'", createdAt["format"])
+	}
+
+	// Check email field
+	email := paramProps["email"].(map[string]interface{})
+	if email["type"] != "string" {
+		t.Errorf("Expected type 'string' for email, got '%v'", email["type"])
+	}
+	if email["format"] != "email" {
+		t.Errorf("Expected format 'email' for email, got '%v'", email["format"])
+	}
+	if email["pattern"] == nil {
+		t.Error("Expected pattern to be set for email field")
+	}
+
+	// Check id field
+	id := paramProps["id"].(map[string]interface{})
+	if id["type"] != "string" {
+		t.Errorf("Expected type 'string' for id, got '%v'", id["type"])
+	}
+	if id["format"] != "uuid" {
+		t.Errorf("Expected format 'uuid' for id, got '%v'", id["format"])
+	}
+}
+
 

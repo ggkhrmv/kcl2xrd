@@ -8,6 +8,7 @@
 *.so
 *.dylib
 bin/
+kcl2xrd
 
 # Test binary, built with `go test -c`
 *.test

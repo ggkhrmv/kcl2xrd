@@ -61,6 +61,8 @@ type Field struct {
 	Minimum     *int   // minimum value for numbers
 	Maximum     *int   // maximum value for numbers
 	MinItems    *int   // minimum number of items in arrays
+	MaxItems    *int   // maximum number of items in arrays
+	Format      string // format for strings (e.g., "date-time")
 	Enum        []string // enumeration of allowed values
 	Immutable   bool   // x-kubernetes-immutable marker
 	CELValidations []CELValidation // CEL validation rules
@@ -132,6 +134,8 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	minimumRegex := regexp.MustCompile(`@minimum\s*\(\s*(\d+)\s*\)`)
 	maximumRegex := regexp.MustCompile(`@maximum\s*\(\s*(\d+)\s*\)`)
 	minItemsRegex := regexp.MustCompile(`@minItems\s*\(\s*(\d+)\s*\)`)
+	maxItemsRegex := regexp.MustCompile(`@maxItems\s*\(\s*(\d+)\s*\)`)
+	formatRegex := regexp.MustCompile(`@format\s*\(\s*['"](.*?)['"]\s*\)`)
 	enumRegex := regexp.MustCompile(`@enum\s*\(\s*\[(.*?)\]\s*\)`)
 	immutableRegex := regexp.MustCompile(`@immutable`)
 	celValidationRegex := regexp.MustCompile(`@validate\s*\(\s*['"](.*?)['"]\s*(?:,\s*['"](.*?)['"]\s*)?\)`)
@@ -349,7 +353,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				// Apply validation annotations from pending comments
 				applyValidationAnnotations(&field, pendingAnnotations, 
 					patternRegex, minLengthRegex, maxLengthRegex, 
-					minimumRegex, maximumRegex, minItemsRegex, enumRegex, immutableRegex, celValidationRegex,
+					minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, enumRegex, immutableRegex, celValidationRegex,
 					preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex)
 				pendingAnnotations = nil
 				
@@ -406,7 +410,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 
 // applyValidationAnnotations applies validation annotations from comments to a field
 func applyValidationAnnotations(field *Field, annotations []string, 
-	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, minItemsRegex, enumRegex, immutableRegex, celValidationRegex,
+	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, enumRegex, immutableRegex, celValidationRegex,
 	preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex *regexp.Regexp) {
 	
 	for _, annotation := range annotations {
@@ -448,6 +452,18 @@ func applyValidationAnnotations(field *Field, annotations []string,
 			if val, err := strconv.Atoi(matches[1]); err == nil {
 				field.MinItems = &val
 			}
+		}
+		
+		// Check for maxItems
+		if matches := maxItemsRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+			if val, err := strconv.Atoi(matches[1]); err == nil {
+				field.MaxItems = &val
+			}
+		}
+		
+		// Check for format
+		if matches := formatRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+			field.Format = matches[1]
 		}
 		
 		// Check for enum
