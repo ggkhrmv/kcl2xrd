@@ -598,8 +598,16 @@ func applyFieldValidationsAndDefaults(field parser.Field, schema *PropertySchema
 		}
 	}
 
+	// Apply @additionalProperties annotation
+	// Only set to true if additionalProperties is not already set with a typed schema
+	// This preserves the type schema for map types like {str:str}
 	if field.AdditionalPropertiesAnnotation {
-		schema.AdditionalProperties = true
+		// If additionalProperties is not already set (or is nil), set it to true
+		if schema.AdditionalProperties == nil {
+			schema.AdditionalProperties = true
+		}
+		// If it's already a PropertySchema (from map type), leave it as is
+		// This allows {str:str} with @additionalProperties to keep the type: string schema
 	}
 
 	if field.MapType != "" {

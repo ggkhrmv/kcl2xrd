@@ -1602,6 +1602,81 @@ func TestGenerateXRDWithSpecPathSchemas(t *testing.T) {
 
 
 
+func TestGenerateXRDWithAdditionalPropertiesOnMapType(t *testing.T) {
+	// Test that @additionalProperties on a map type preserves the typed schema
+	schema := &parser.Schema{
+		Name: "TestMapWithAdditionalProperties",
+		Fields: []parser.Field{
+			{
+				Name:                           "config",
+				Type:                           "{str:str}",
+				Required:                       true,
+				AdditionalPropertiesAnnotation: true,
+			},
+			{
+				Name:                           "counts",
+				Type:                           "{str:int}",
+				Required:                       false,
+				AdditionalPropertiesAnnotation: true,
+			},
+		},
+	}
+
+	xrdYAML, err := GenerateXRD(schema, "example.org", "v1alpha1")
+	if err != nil {
+		t.Fatalf("GenerateXRD failed: %v", err)
+	}
+
+	// Parse the YAML
+	var xrd map[string]interface{}
+	if err := yaml.Unmarshal([]byte(xrdYAML), &xrd); err != nil {
+		t.Fatalf("Generated XRD is not valid YAML: %v", err)
+	}
+
+	// Navigate to parameters properties
+	spec := xrd["spec"].(map[string]interface{})
+	versions := spec["versions"].([]interface{})
+	version := versions[0].(map[string]interface{})
+	versionSchema := version["schema"].(map[string]interface{})
+	openAPISchema := versionSchema["openAPIV3Schema"].(map[string]interface{})
+	properties := openAPISchema["properties"].(map[string]interface{})
+	specProp := properties["spec"].(map[string]interface{})
+	specProps := specProp["properties"].(map[string]interface{})
+	parameters := specProps["parameters"].(map[string]interface{})
+	paramProps := parameters["properties"].(map[string]interface{})
+
+	// Check config field - should preserve the typed additionalProperties schema
+	config := paramProps["config"].(map[string]interface{})
+	if config["type"] != "object" {
+		t.Errorf("Expected type 'object' for config, got '%v'", config["type"])
+	}
+	
+	// additionalProperties should be a schema object with type, not just true
+	additionalProps, ok := config["additionalProperties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected additionalProperties to be a schema object, got %T: %v", config["additionalProperties"], config["additionalProperties"])
+	}
+	
+	if additionalProps["type"] != "string" {
+		t.Errorf("Expected additionalProperties type 'string' for config, got '%v'", additionalProps["type"])
+	}
+
+	// Check counts field - should also preserve the typed schema
+	counts := paramProps["counts"].(map[string]interface{})
+	if counts["type"] != "object" {
+		t.Errorf("Expected type 'object' for counts, got '%v'", counts["type"])
+	}
+	
+	additionalProps, ok = counts["additionalProperties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected additionalProperties to be a schema object for counts, got %T: %v", counts["additionalProperties"], counts["additionalProperties"])
+	}
+	
+	if additionalProps["type"] != "integer" {
+		t.Errorf("Expected additionalProperties type 'integer' for counts, got '%v'", additionalProps["type"])
+	}
+}
+
 func TestGenerateXRDWithItemsPreserveUnknownFields(t *testing.T) {
 schema := &parser.Schema{
 Name: "XMyApp",
