@@ -337,9 +337,7 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 	}
 
 	// Add spec-level required fields to spec required list
-	for _, requiredField := range specLevelRequired {
-		specSchema.Required = append(specSchema.Required, requiredField)
-	}
+	specSchema.Required = append(specSchema.Required, specLevelRequired...)
 
 	// Process spec path schemas (schemas marked with @spec.path)
 	for path, specPathSchema := range specPathSchemas {
