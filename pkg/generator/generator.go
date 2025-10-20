@@ -69,10 +69,10 @@ type XRDOptions struct {
 
 // Version represents a version in an XRD spec
 type Version struct {
-	Name                   string          `yaml:"name"`
-	Served                 bool            `yaml:"served"`
-	Referenceable          bool            `yaml:"referenceable"`
-	Schema                 VersionSchema   `yaml:"schema"`
+	Name                     string          `yaml:"name"`
+	Served                   bool            `yaml:"served"`
+	Referenceable            bool            `yaml:"referenceable"`
+	Schema                   VersionSchema   `yaml:"schema"`
 	AdditionalPrinterColumns []PrinterColumn `yaml:"additionalPrinterColumns,omitempty"`
 }
 
@@ -90,31 +90,31 @@ type OpenAPIV3Schema struct {
 
 // PropertySchema represents a property in an OpenAPI schema
 type PropertySchema struct {
-	Type        string                    `yaml:"type,omitempty"`
-	Description string                    `yaml:"description,omitempty"`
-	Properties  map[string]PropertySchema `yaml:"properties,omitempty"`
-	Required    []string                  `yaml:"required,omitempty"`
-	Items       *PropertySchema           `yaml:"items,omitempty"`
-	AdditionalProperties interface{}      `yaml:"additionalProperties,omitempty"`
-	Format      string                    `yaml:"format,omitempty"`
-	Default     interface{}               `yaml:"default,omitempty"`
+	Type                 string                    `yaml:"type,omitempty"`
+	Description          string                    `yaml:"description,omitempty"`
+	Properties           map[string]PropertySchema `yaml:"properties,omitempty"`
+	Required             []string                  `yaml:"required,omitempty"`
+	Items                *PropertySchema           `yaml:"items,omitempty"`
+	AdditionalProperties interface{}               `yaml:"additionalProperties,omitempty"`
+	Format               string                    `yaml:"format,omitempty"`
+	Default              interface{}               `yaml:"default,omitempty"`
 	// Validation fields
-	Pattern                    string          `yaml:"pattern,omitempty"`
-	MinLength                    *int            `yaml:"minLength,omitempty"`
-	MaxLength                    *int            `yaml:"maxLength,omitempty"`
-	Minimum                      *int            `yaml:"minimum,omitempty"`
-	Maximum                      *int            `yaml:"maximum,omitempty"`
-	MinItems                     *int            `yaml:"minItems,omitempty"`
-	MaxItems                     *int            `yaml:"maxItems,omitempty"`
-	Enum                         []string        `yaml:"enum,omitempty"`
-	OneOf                        []PropertySchema `yaml:"oneOf,omitempty"`
-	AnyOf                        []PropertySchema `yaml:"anyOf,omitempty"`
-	XKubernetesValidations       []K8sValidation `yaml:"x-kubernetes-validations,omitempty"`
-	XKubernetesImmutable         *bool           `yaml:"x-kubernetes-immutable,omitempty"`
-	XKubernetesPreserveUnknownFields *bool       `yaml:"x-kubernetes-preserve-unknown-fields,omitempty"`
-	XKubernetesMapType           string          `yaml:"x-kubernetes-map-type,omitempty"`
-	XKubernetesListType          string          `yaml:"x-kubernetes-list-type,omitempty"`
-	XKubernetesListMapKeys       []string        `yaml:"x-kubernetes-list-map-keys,omitempty"`
+	Pattern                          string           `yaml:"pattern,omitempty"`
+	MinLength                        *int             `yaml:"minLength,omitempty"`
+	MaxLength                        *int             `yaml:"maxLength,omitempty"`
+	Minimum                          *int             `yaml:"minimum,omitempty"`
+	Maximum                          *int             `yaml:"maximum,omitempty"`
+	MinItems                         *int             `yaml:"minItems,omitempty"`
+	MaxItems                         *int             `yaml:"maxItems,omitempty"`
+	Enum                             []string         `yaml:"enum,omitempty"`
+	OneOf                            []PropertySchema `yaml:"oneOf,omitempty"`
+	AnyOf                            []PropertySchema `yaml:"anyOf,omitempty"`
+	XKubernetesValidations           []K8sValidation  `yaml:"x-kubernetes-validations,omitempty"`
+	XKubernetesImmutable             *bool            `yaml:"x-kubernetes-immutable,omitempty"`
+	XKubernetesPreserveUnknownFields *bool            `yaml:"x-kubernetes-preserve-unknown-fields,omitempty"`
+	XKubernetesMapType               string           `yaml:"x-kubernetes-map-type,omitempty"`
+	XKubernetesListType              string           `yaml:"x-kubernetes-list-type,omitempty"`
+	XKubernetesListMapKeys           []string         `yaml:"x-kubernetes-list-map-keys,omitempty"`
 }
 
 // K8sValidation represents Kubernetes CEL validation rules
@@ -145,34 +145,39 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 	if opts.Kind != "" {
 		baseName = opts.Kind
 	}
-	
+
 	// Convert base name to lowercase plural for the resource name
-	plural := strings.ToLower(baseName) + "s"
+	var plural string
+	if baseName[len(baseName)-1] == 'y' {
+		plural = strings.ToLower(baseName[:len(baseName)-1]) + "ies"
+	} else {
+		plural = strings.ToLower(baseName) + "s"
+	}
 	// Determine names based on claims mode
 	var xrdKind, xrdPlural string
 	var claimKind, claimPlural string
-	
+
 	if opts.WithClaims {
 		// When using claims, __xrd_kind should be the unprefixed name
 		// XRD gets X prefix, claims use the original unprefixed name
-		
+
 		// Always treat baseName as unprefixed when using claims
 		// Strip X prefix if it was provided for backward compatibility
 		unprefixedName := baseName
 		if strings.HasPrefix(baseName, "X") {
 			unprefixedName = strings.TrimPrefix(baseName, "X")
 		}
-		
+
 		// XRD kind gets X prefix
 		xrdKind = "X" + unprefixedName
-		
+
 		// Claim kind is the unprefixed name
 		if opts.ClaimKind == "" {
 			claimKind = unprefixedName
 		} else {
 			claimKind = opts.ClaimKind
 		}
-		
+
 		// Generate plurals
 		xrdPlural = strings.ToLower(xrdKind) + "s"
 		if opts.ClaimPlural == "" {
@@ -185,7 +190,7 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 		xrdKind = baseName
 		xrdPlural = plural
 	}
-	
+
 	resourceName := xrdPlural + "." + opts.Group
 
 	xrd := XRD{
@@ -232,22 +237,22 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 		Properties: make(map[string]PropertySchema),
 		Required:   []string{},
 	}
-	
+
 	statusSchema := PropertySchema{
 		Type:       "object",
 		Properties: make(map[string]PropertySchema),
 		Required:   []string{},
 	}
-	
+
 	// Map to store spec-level fields (fields marked with @spec)
 	specLevelFields := make(map[string]PropertySchema)
 	specLevelRequired := []string{}
-	
+
 	// Map to store spec path schemas (schemas marked with @spec.path)
 	specPathSchemas := make(map[string]*parser.Schema)
-	
+
 	hasStatusFields := false
-	
+
 	// Check if there's a separate status schema
 	var statusSchemaObj *parser.Schema
 	for _, s := range schemas {
@@ -260,7 +265,7 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 			specPathSchemas[s.SpecPath] = s
 		}
 	}
-	
+
 	// If there's a separate status schema, use its fields for status
 	if statusSchemaObj != nil {
 		for _, field := range statusSchemaObj.Fields {
@@ -275,7 +280,7 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 
 	for _, field := range schema.Fields {
 		propSchema := convertFieldToPropertySchemaWithSchemas(field, schemas)
-		
+
 		// Check if field is marked as status field
 		if field.IsStatus {
 			statusSchema.Properties[field.Name] = propSchema
@@ -307,7 +312,7 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 			parametersSchema.OneOf = append(parametersSchema.OneOf, oneOfSchema)
 		}
 	}
-	
+
 	if len(schema.AnyOf) > 0 {
 		for _, requiredFields := range schema.AnyOf {
 			anyOfSchema := PropertySchema{
@@ -325,17 +330,17 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 		},
 		Required: []string{"parameters"},
 	}
-	
+
 	// Add spec-level fields directly to spec
 	for fieldName, fieldSchema := range specLevelFields {
 		specSchema.Properties[fieldName] = fieldSchema
 	}
-	
+
 	// Add spec-level required fields to spec required list
 	for _, requiredField := range specLevelRequired {
 		specSchema.Required = append(specSchema.Required, requiredField)
 	}
-	
+
 	// Process spec path schemas (schemas marked with @spec.path)
 	for path, specPathSchema := range specPathSchemas {
 		pathSchema := PropertySchema{
@@ -343,7 +348,7 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 			Properties: make(map[string]PropertySchema),
 			Required:   []string{},
 		}
-		
+
 		for _, field := range specPathSchema.Fields {
 			propSchema := convertFieldToPropertySchemaWithSchemas(field, schemas)
 			pathSchema.Properties[field.Name] = propSchema
@@ -351,21 +356,21 @@ func GenerateXRDWithSchemasAndOptions(schema *parser.Schema, schemas map[string]
 				pathSchema.Required = append(pathSchema.Required, field.Name)
 			}
 		}
-		
+
 		// Add the path schema to spec
 		specSchema.Properties[path] = pathSchema
 	}
 
 	xrd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"] = specSchema
 	xrd.Spec.Versions[0].Schema.OpenAPIV3Schema.Required = []string{"spec"}
-	
+
 	// Add status section if there are status fields or if status preserve-unknown-fields is set
 	if hasStatusFields || opts.StatusPreserveUnknownFields {
 		// If status preserve-unknown-fields is set but no fields, create minimal status schema
 		if opts.StatusPreserveUnknownFields && !hasStatusFields {
 			preserve := true
 			statusSchema = PropertySchema{
-				Type:                         "object",
+				Type:                             "object",
 				XKubernetesPreserveUnknownFields: &preserve,
 			}
 		}
@@ -416,7 +421,7 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 		// Array type: [ElementType]
 		schema.Type = "array"
 		elementType := strings.TrimSuffix(strings.TrimPrefix(field.Type, "["), "]")
-		
+
 		// Check for [{any:any}] pattern - array of arbitrary objects
 		if strings.TrimSpace(elementType) == "{any:any}" {
 			// Array of objects with arbitrary properties
@@ -446,18 +451,18 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 	case strings.HasPrefix(field.Type, "{") && strings.Contains(field.Type, ":"):
 		// Map/dict type: {K:V} - maps to OpenAPI object with additionalProperties
 		schema.Type = "object"
-		
+
 		// Parse the key:value types from {K:V} syntax
 		mapContent := strings.TrimSpace(strings.Trim(field.Type, "{}"))
 		parts := strings.SplitN(mapContent, ":", 2)
 		if len(parts) == 2 {
 			// keyType := strings.TrimSpace(parts[0])  // Not used in OpenAPI - maps always have string keys
 			valueType := strings.TrimSpace(parts[1])
-			
+
 			// Create the additionalProperties schema based on the value type
 			valueSchema := convertFieldToPropertySchemaWithSchemas(parser.Field{Type: valueType}, schemas)
 			schema.AdditionalProperties = &valueSchema
-			
+
 			// Special handling for {any:any} - apply preserve unknown fields if annotation is present
 			if mapContent == "any:any" && field.PreserveUnknownFields {
 				preserve := true
@@ -471,12 +476,12 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 			schema.Type = "object"
 			schema.Properties = make(map[string]PropertySchema)
 			nestedSchema := schemas[field.Type]
-			
+
 			// Add description from the field if present (for the object itself)
 			if field.Description != "" {
 				schema.Description = field.Description
 			}
-			
+
 			for _, nestedField := range nestedSchema.Fields {
 				nestedProp := convertFieldToPropertySchemaWithSchemas(nestedField, schemas)
 				schema.Properties[nestedField.Name] = nestedProp
@@ -484,10 +489,10 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 					schema.Required = append(schema.Required, nestedField.Name)
 				}
 			}
-			
+
 			// Apply validation fields and defaults to the nested schema object
 			applyFieldValidationsAndDefaults(field, &schema)
-			
+
 			// Return early since we've already handled description and validations
 			return schema
 		} else {
@@ -499,7 +504,7 @@ func convertFieldToPropertySchemaWithSchemas(field parser.Field, schemas map[str
 	if field.Description != "" {
 		schema.Description = field.Description
 	}
-	
+
 	applyFieldValidationsAndDefaults(field, &schema)
 
 	return schema
@@ -541,49 +546,49 @@ func applyFieldValidationsAndDefaults(field parser.Field, schema *PropertySchema
 			schema.Default = defaultValue
 		}
 	}
-	
+
 	// Apply validation constraints
 	if field.Pattern != "" {
 		schema.Pattern = field.Pattern
 	}
-	
+
 	if field.MinLength != nil {
 		schema.MinLength = field.MinLength
 	}
-	
+
 	if field.MaxLength != nil {
 		schema.MaxLength = field.MaxLength
 	}
-	
+
 	if field.Minimum != nil {
 		schema.Minimum = field.Minimum
 	}
-	
+
 	if field.Maximum != nil {
 		schema.Maximum = field.Maximum
 	}
-	
+
 	if field.MinItems != nil {
 		schema.MinItems = field.MinItems
 	}
-	
+
 	if field.MaxItems != nil {
 		schema.MaxItems = field.MaxItems
 	}
-	
+
 	if field.Format != "" {
 		schema.Format = field.Format
 	}
-	
+
 	if len(field.Enum) > 0 {
 		schema.Enum = field.Enum
 	}
-	
+
 	if field.Immutable {
 		immutable := true
 		schema.XKubernetesImmutable = &immutable
 	}
-	
+
 	// Apply preserveUnknownFields, but skip for array types with [{any:any}] pattern
 	// as those are handled in the type conversion logic
 	if field.PreserveUnknownFields {
@@ -594,23 +599,23 @@ func applyFieldValidationsAndDefaults(field parser.Field, schema *PropertySchema
 			schema.XKubernetesPreserveUnknownFields = &preserve
 		}
 	}
-	
+
 	if field.AdditionalPropertiesAnnotation {
 		schema.AdditionalProperties = true
 	}
-	
+
 	if field.MapType != "" {
 		schema.XKubernetesMapType = field.MapType
 	}
-	
+
 	if field.ListType != "" {
 		schema.XKubernetesListType = field.ListType
 	}
-	
+
 	if len(field.ListMapKeys) > 0 {
 		schema.XKubernetesListMapKeys = field.ListMapKeys
 	}
-	
+
 	// Apply CEL validations
 	if len(field.CELValidations) > 0 {
 		for _, celVal := range field.CELValidations {
@@ -621,7 +626,7 @@ func applyFieldValidationsAndDefaults(field parser.Field, schema *PropertySchema
 			schema.XKubernetesValidations = append(schema.XKubernetesValidations, k8sVal)
 		}
 	}
-	
+
 	// Apply OneOf validations
 	if len(field.OneOf) > 0 {
 		for _, requiredFields := range field.OneOf {
@@ -631,7 +636,7 @@ func applyFieldValidationsAndDefaults(field parser.Field, schema *PropertySchema
 			schema.OneOf = append(schema.OneOf, oneOfSchema)
 		}
 	}
-	
+
 	// Apply AnyOf validations
 	if len(field.AnyOf) > 0 {
 		for _, requiredFields := range field.AnyOf {

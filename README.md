@@ -27,7 +27,7 @@ cd kcl2xrd && make build
 - **KCL runtime evaluation** - automatically evaluates metadata variables including format expressions, property access, and variable references
 - **Import support** - reuse central configuration files across multiple XRDs with KCL imports
 - **`@xrd` annotation** - mark parent schema, ignore unrelated code
-- **Field filtering with `$` prefix** - automatically omit KCL internal variables and keywords from XRD generation
+- **KCL reserved fields** - prefixed with `$` the KCL reserved fields can be used for schema definition
 - **Validation annotations** - patterns, enums, ranges, string/numeric constraints, CEL expressions, oneOf/anyOf schema composition
 - **Kubernetes-specific annotations** - immutability, preserveUnknownFields (with granular control for array items), mapType, listType, listMapKeys, additionalProperties
 - **`@status` annotation** - separate status fields or define separate status schema for proper Crossplane resource state management
@@ -181,7 +181,7 @@ schema MyResource:
 
 ### Field Filtering
 
-#### `$` Prefix - Internal/Private Fields
+#### `$` Prefix - KCL Reserved fields
 Fields with names starting with `$` are treated as KCL internal variables and are automatically omitted from the generated XRD. This is useful for KCL-specific fields like `$filter` or internal configuration variables that should not appear in the Crossplane XRD.
 
 ```kcl
@@ -190,17 +190,17 @@ schema MyApp:
     name: str
     replicas?: int = 3
     
-    # Internal KCL variable - omitted from XRD
+    # KCL reserved keyword with $ prefix - rendered as "filter" in XRD
     $filter: str
     
-    # Internal configuration - omitted from XRD
-    $internalConfig: {str:str}
+    # KCL reserved keyword with $ prefix - rendered as "type" in XRD
+    $type: str
     
     # Regular field - included in XRD
     region?: str = "us-east-1"
 ```
 
-This generates an XRD with only the non-`$` prefixed fields:
+This generates an XRD with the $ prefix stripped from field names:
 ```yaml
 spec:
   properties:
@@ -212,15 +212,19 @@ spec:
         replicas:
           type: integer
           default: 3
+        filter:
+          type: string
+        type:
+          type: string
         region:
           type: string
           default: us-east-1
 ```
 
 **Key points:**
-- Any field starting with `$` is automatically filtered out
-- No annotation needed - the `$` prefix is sufficient
-- Useful for KCL keywords and internal variables
+- Use $ prefix for KCL reserved keywords (e.g., $filter, $type, $import)
+- The $ is automatically stripped in the generated XRD
+- Allows you to define fields with names that conflict with KCL syntax
 - Works with all field types and validation annotations
 
 ### String Validation Annotations

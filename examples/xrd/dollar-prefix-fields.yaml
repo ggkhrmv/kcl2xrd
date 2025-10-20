@@ -21,16 +21,22 @@ spec:
                 parameters:
                   type: object
                   properties:
+                    filter:
+                      type: string
+                      description: |-
+                        Internal KCL variables - these will be omitted from XRD
+                        $filter is a KCL internal keyword/variable
+                    internalConfig:
+                      type: object
+                      description: Another internal variable
+                      additionalProperties:
+                        type: string
                     name:
                       type: string
                       description: Regular fields - these will be in the XRD
                     region:
                       type: string
-                      description: |-
-                        Internal KCL variables - these will be omitted from XRD
-                        $filter is a KCL internal keyword/variable
-                        Another internal variable
-                        Regular field - will be in the XRD
+                      description: Regular field - will be in the XRD
                       default: us-east-1
                     replicas:
                       type: integer
@@ -38,6 +44,8 @@ spec:
                       minimum: 1
                   required:
                     - name
+                    - filter
+                    - internalConfig
               required:
                 - parameters
           required:
