@@ -1,0 +1,52 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: myapps.example.org
+spec:
+  group: example.org
+  names:
+    kind: MyApp
+    plural: myapps
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    filter:
+                      type: string
+                      description: |-
+                        Internal KCL variables - these will be omitted from XRD
+                        $filter is a KCL internal keyword/variable
+                    internalConfig:
+                      type: object
+                      description: Another internal variable
+                      additionalProperties:
+                        type: string
+                    name:
+                      type: string
+                      description: Regular fields - these will be in the XRD
+                    region:
+                      type: string
+                      description: Regular field - will be in the XRD
+                      default: us-east-1
+                    replicas:
+                      type: integer
+                      default: 3
+                      minimum: 1
+                  required:
+                    - name
+                    - filter
+                    - internalConfig
+              required:
+                - parameters
+          required:
+            - spec

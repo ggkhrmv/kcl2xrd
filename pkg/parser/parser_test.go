@@ -3,6 +3,7 @@ package parser
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -111,7 +112,7 @@ import something
 func TestParseKCLFileWithValidations(t *testing.T) {
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "test.k")
-	
+
 	content := `schema TestSchema:
     # @pattern("^[a-z]+$")
     # @minLength(3)
@@ -131,16 +132,16 @@ func TestParseKCLFileWithValidations(t *testing.T) {
     # @validate("self > 0", "Must be positive")
     count?: int
 `
-	
+
 	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
-	
+
 	schema, err := ParseKCLFile(testFile)
 	if err != nil {
 		t.Fatalf("ParseKCLFile failed: %v", err)
 	}
-	
+
 	// Check name field validations
 	nameField := schema.Fields[0]
 	if nameField.Pattern != "^[a-z]+$" {
@@ -152,7 +153,7 @@ func TestParseKCLFileWithValidations(t *testing.T) {
 	if nameField.MaxLength == nil || *nameField.MaxLength != 10 {
 		t.Error("Expected maxLength of 10")
 	}
-	
+
 	// Check age field validations
 	ageField := schema.Fields[1]
 	if ageField.Minimum == nil || *ageField.Minimum != 0 {
@@ -161,19 +162,19 @@ func TestParseKCLFileWithValidations(t *testing.T) {
 	if ageField.Maximum == nil || *ageField.Maximum != 100 {
 		t.Error("Expected maximum of 100")
 	}
-	
+
 	// Check status field enum
 	statusField := schema.Fields[2]
 	if len(statusField.Enum) != 2 {
 		t.Errorf("Expected 2 enum values, got %d", len(statusField.Enum))
 	}
-	
+
 	// Check id field immutability
 	idField := schema.Fields[3]
 	if !idField.Immutable {
 		t.Error("Expected id field to be immutable")
 	}
-	
+
 	// Check count field CEL validation
 	countField := schema.Fields[4]
 	if len(countField.CELValidations) != 1 {
@@ -187,7 +188,7 @@ func TestParseKCLFileWithValidations(t *testing.T) {
 func TestParseKCLFileWithNestedSchemas(t *testing.T) {
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "test.k")
-	
+
 	content := `schema NestedSchema:
     field1: str
     field2: int
@@ -196,21 +197,21 @@ schema MainSchema:
     nested: NestedSchema
     name: str
 `
-	
+
 	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
-	
+
 	result, err := ParseKCLFileWithSchemas(testFile)
 	if err != nil {
 		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
 	}
-	
+
 	// Check that we have 2 schemas
 	if len(result.Schemas) != 2 {
 		t.Errorf("Expected 2 schemas, got %d", len(result.Schemas))
 	}
-	
+
 	// Check that both schemas exist
 	if result.Schemas["NestedSchema"] == nil {
 		t.Error("Expected NestedSchema to be parsed")
@@ -218,24 +219,24 @@ schema MainSchema:
 	if result.Schemas["MainSchema"] == nil {
 		t.Error("Expected MainSchema to be parsed")
 	}
-	
+
 	// Check that primary schema is MainSchema (last one)
 	if result.Primary.Name != "MainSchema" {
 		t.Errorf("Expected primary schema to be 'MainSchema', got '%s'", result.Primary.Name)
 	}
-	
+
 	// Check nested schema fields
 	nestedSchema := result.Schemas["NestedSchema"]
 	if len(nestedSchema.Fields) != 2 {
 		t.Errorf("Expected NestedSchema to have 2 fields, got %d", len(nestedSchema.Fields))
 	}
-	
+
 	// Check main schema fields
 	mainSchema := result.Schemas["MainSchema"]
 	if len(mainSchema.Fields) != 2 {
 		t.Errorf("Expected MainSchema to have 2 fields, got %d", len(mainSchema.Fields))
 	}
-	
+
 	// Check that nested field has correct type
 	if mainSchema.Fields[0].Type != "NestedSchema" {
 		t.Errorf("Expected nested field type 'NestedSchema', got '%s'", mainSchema.Fields[0].Type)
@@ -246,7 +247,7 @@ func TestParseKCLFileWithModuleLevelVariables(t *testing.T) {
 	// Test that non-indented module-level variables after schemas don't get parsed as fields
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "test.k")
-	
+
 	content := `schema BucketPolicyStatement:
     # @enum(["Allow", "Deny"])
     effect?: str
@@ -261,21 +262,21 @@ _composition: schemas.Composition{
     xrKind: "Test"
 }
 `
-	
+
 	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
-	
+
 	result, err := ParseKCLFileWithSchemas(testFile)
 	if err != nil {
 		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
 	}
-	
+
 	schema := result.Schemas["BucketPolicyStatement"]
 	if schema == nil {
 		t.Fatal("Expected BucketPolicyStatement schema to be parsed")
 	}
-	
+
 	// Should have exactly 3 fields (effect, principal, action)
 	if len(schema.Fields) != 3 {
 		t.Errorf("Expected 3 fields, got %d", len(schema.Fields))
@@ -283,11 +284,11 @@ _composition: schemas.Composition{
 			t.Logf("Field %d: %s (%s)", i, field.Name, field.Type)
 		}
 	}
-	
+
 	// Verify we don't have _xrSubgroup or _composition fields
 	for _, field := range schema.Fields {
-		if field.Name == "_xrSubgroup" || field.Name == "_composition" || 
-		   field.Name == "xrKind" || field.Name == "selector" {
+		if field.Name == "_xrSubgroup" || field.Name == "_composition" ||
+			field.Name == "xrKind" || field.Name == "selector" {
 			t.Errorf("Field '%s' should not be part of schema - module-level variables should not be parsed as fields", field.Name)
 		}
 	}
@@ -296,7 +297,7 @@ _composition: schemas.Composition{
 func TestParseKCLFileWithGroupExpression(t *testing.T) {
 	// Test that __xrd_group with format expressions can be resolved
 	tempDir := t.TempDir()
-	
+
 	t.Run("resolvable_format_expression", func(t *testing.T) {
 		testFile := filepath.Join(tempDir, "test1.k")
 		content := `_xrSubgroup = "aws"
@@ -309,22 +310,22 @@ __xrd_version = "v1alpha1"
 schema Bucket:
     name: str
 `
-		
+
 		if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
 			t.Fatalf("Failed to create test file: %v", err)
 		}
-		
+
 		result, err := ParseKCLFileWithSchemas(testFile)
 		if err != nil {
 			t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
 		}
-		
+
 		// Group should be resolved from the format expression
 		expected := "aws.example.org"
 		if result.Metadata.Group != expected {
 			t.Errorf("Expected Group '%s', got '%s'", expected, result.Metadata.Group)
 		}
-		
+
 		// XRKind and XRVersion should also be parsed
 		if result.Metadata.XRKind != "Bucket" {
 			t.Errorf("Expected XRKind 'Bucket', got '%s'", result.Metadata.XRKind)
@@ -333,7 +334,7 @@ schema Bucket:
 			t.Errorf("Expected XRVersion 'v1alpha1', got '%s'", result.Metadata.XRVersion)
 		}
 	})
-	
+
 	t.Run("unresolvable_format_expression", func(t *testing.T) {
 		testFile := filepath.Join(tempDir, "test2.k")
 		content := `__xrd_kind = "Bucket"
@@ -343,21 +344,21 @@ __xrd_version = "v1alpha1"
 schema Bucket:
     name: str
 `
-		
+
 		if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
 			t.Fatalf("Failed to create test file: %v", err)
 		}
-		
+
 		result, err := ParseKCLFileWithSchemas(testFile)
 		if err != nil {
 			t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
 		}
-		
+
 		// Group should be empty since variables are not defined
 		if result.Metadata.Group != "" {
 			t.Errorf("Expected Group to be empty for unresolvable expression, got '%s'", result.Metadata.Group)
 		}
-		
+
 		// But XRKind and XRVersion should be parsed
 		if result.Metadata.XRKind != "Bucket" {
 			t.Errorf("Expected XRKind 'Bucket', got '%s'", result.Metadata.XRKind)
@@ -372,7 +373,7 @@ func TestParseKCLFileWithAnyType(t *testing.T) {
 	// Test that fields with 'any' type are properly parsed
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "test.k")
-	
+
 	content := `schema TestSchema:
     # @preserveUnknownFields
     # Description for principal
@@ -384,21 +385,21 @@ func TestParseKCLFileWithAnyType(t *testing.T) {
     
     name: str
 `
-	
+
 	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
-	
+
 	result, err := ParseKCLFileWithSchemas(testFile)
 	if err != nil {
 		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
 	}
-	
+
 	schema := result.Schemas["TestSchema"]
 	if schema == nil {
 		t.Fatal("Expected TestSchema to be parsed")
 	}
-	
+
 	// Check principal field
 	if len(schema.Fields) < 1 {
 		t.Fatal("Expected at least 1 field")
@@ -416,7 +417,7 @@ func TestParseKCLFileWithAnyType(t *testing.T) {
 	if principalField.Description == "" {
 		t.Error("Expected description to be set")
 	}
-	
+
 	// Check action field
 	if len(schema.Fields) < 2 {
 		t.Fatal("Expected at least 2 fields")
@@ -437,7 +438,7 @@ func TestParseKCLFileWithMinItems(t *testing.T) {
 	// Test that @minItems annotation is properly parsed
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "test.k")
-	
+
 	content := `schema TestSchema:
     # @minItems(1)
     tags: [str]
@@ -446,21 +447,21 @@ func TestParseKCLFileWithMinItems(t *testing.T) {
     # @listType("set")
     items?: [str]
 `
-	
+
 	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
-	
+
 	result, err := ParseKCLFileWithSchemas(testFile)
 	if err != nil {
 		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
 	}
-	
+
 	schema := result.Schemas["TestSchema"]
 	if schema == nil {
 		t.Fatal("Expected TestSchema to be parsed")
 	}
-	
+
 	// Check tags field
 	if len(schema.Fields) < 1 {
 		t.Fatal("Expected at least 1 field")
@@ -472,7 +473,7 @@ func TestParseKCLFileWithMinItems(t *testing.T) {
 	if tagsField.MinItems == nil || *tagsField.MinItems != 1 {
 		t.Error("Expected minItems of 1 for tags field")
 	}
-	
+
 	// Check items field
 	if len(schema.Fields) < 2 {
 		t.Fatal("Expected at least 2 fields")
@@ -573,7 +574,7 @@ func TestParseKCLFileWithMaxItems(t *testing.T) {
 	// Test that @maxItems annotation is properly parsed
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "test.k")
-	
+
 	content := `schema TestSchema:
     # @maxItems(5)
     tags: [str]
@@ -582,21 +583,21 @@ func TestParseKCLFileWithMaxItems(t *testing.T) {
     # @maxItems(10)
     items?: [str]
 `
-	
+
 	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
-	
+
 	result, err := ParseKCLFileWithSchemas(testFile)
 	if err != nil {
 		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
 	}
-	
+
 	schema := result.Schemas["TestSchema"]
 	if schema == nil {
 		t.Fatal("Expected TestSchema to be parsed")
 	}
-	
+
 	// Check tags field
 	if len(schema.Fields) < 1 {
 		t.Fatal("Expected at least 1 field")
@@ -608,7 +609,7 @@ func TestParseKCLFileWithMaxItems(t *testing.T) {
 	if tagsField.MaxItems == nil || *tagsField.MaxItems != 5 {
 		t.Error("Expected maxItems of 5 for tags field")
 	}
-	
+
 	// Check items field
 	if len(schema.Fields) < 2 {
 		t.Fatal("Expected at least 2 fields")
@@ -629,7 +630,7 @@ func TestParseKCLFileWithFormat(t *testing.T) {
 	// Test that @format annotation is properly parsed
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "test.k")
-	
+
 	content := `schema TestSchema:
     # @format("date-time")
     createdAt: str
@@ -641,21 +642,21 @@ func TestParseKCLFileWithFormat(t *testing.T) {
     # @format("uuid")
     id: str
 `
-	
+
 	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
-	
+
 	result, err := ParseKCLFileWithSchemas(testFile)
 	if err != nil {
 		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
 	}
-	
+
 	schema := result.Schemas["TestSchema"]
 	if schema == nil {
 		t.Fatal("Expected TestSchema to be parsed")
 	}
-	
+
 	// Check createdAt field
 	if len(schema.Fields) < 1 {
 		t.Fatal("Expected at least 1 field")
@@ -667,7 +668,7 @@ func TestParseKCLFileWithFormat(t *testing.T) {
 	if createdAtField.Format != "date-time" {
 		t.Errorf("Expected format 'date-time' for createdAt field, got '%s'", createdAtField.Format)
 	}
-	
+
 	// Check email field
 	if len(schema.Fields) < 2 {
 		t.Fatal("Expected at least 2 fields")
@@ -682,7 +683,7 @@ func TestParseKCLFileWithFormat(t *testing.T) {
 	if emailField.Pattern == "" {
 		t.Error("Expected pattern to be set for email field")
 	}
-	
+
 	// Check id field
 	if len(schema.Fields) < 3 {
 		t.Fatal("Expected at least 3 fields")
@@ -723,21 +724,21 @@ func TestParseKCLFileWithOneOf(t *testing.T) {
 	if len(schema.Fields) < 3 {
 		t.Fatal("Expected at least 3 fields")
 	}
-	
+
 	configField := schema.Fields[2]
 	if configField.Name != "config" {
 		t.Errorf("Expected field name 'config', got '%s'", configField.Name)
 	}
-	
+
 	if len(configField.OneOf) != 2 {
 		t.Fatalf("Expected 2 oneOf combinations, got %d", len(configField.OneOf))
 	}
-	
+
 	// Check first oneOf combination
 	if len(configField.OneOf[0]) != 1 || configField.OneOf[0][0] != "groupName" {
 		t.Errorf("Expected first oneOf to be ['groupName'], got %v", configField.OneOf[0])
 	}
-	
+
 	// Check second oneOf combination
 	if len(configField.OneOf[1]) != 1 || configField.OneOf[1][0] != "groupRef" {
 		t.Errorf("Expected second oneOf to be ['groupRef'], got %v", configField.OneOf[1])
@@ -771,21 +772,21 @@ func TestParseKCLFileWithAnyOf(t *testing.T) {
 	if len(schema.Fields) < 3 {
 		t.Fatal("Expected at least 3 fields")
 	}
-	
+
 	userConfigField := schema.Fields[2]
 	if userConfigField.Name != "userConfig" {
 		t.Errorf("Expected field name 'userConfig', got '%s'", userConfigField.Name)
 	}
-	
+
 	if len(userConfigField.AnyOf) != 2 {
 		t.Fatalf("Expected 2 anyOf combinations, got %d", len(userConfigField.AnyOf))
 	}
-	
+
 	// Check first anyOf combination
 	if len(userConfigField.AnyOf[0]) != 1 || userConfigField.AnyOf[0][0] != "userEmail" {
 		t.Errorf("Expected first anyOf to be ['userEmail'], got %v", userConfigField.AnyOf[0])
 	}
-	
+
 	// Check second anyOf combination
 	if len(userConfigField.AnyOf[1]) != 1 || userConfigField.AnyOf[1][0] != "userObjectId" {
 		t.Errorf("Expected second anyOf to be ['userObjectId'], got %v", userConfigField.AnyOf[1])
@@ -822,17 +823,17 @@ func TestParseKCLFileWithCombinedOneOfAndAnyOf(t *testing.T) {
 	if len(schema.Fields) < 5 {
 		t.Fatal("Expected at least 5 fields")
 	}
-	
+
 	configField := schema.Fields[4]
 	if configField.Name != "config" {
 		t.Errorf("Expected field name 'config', got '%s'", configField.Name)
 	}
-	
+
 	// Check oneOf
 	if len(configField.OneOf) != 2 {
 		t.Fatalf("Expected 2 oneOf combinations, got %d", len(configField.OneOf))
 	}
-	
+
 	// Check anyOf
 	if len(configField.AnyOf) != 2 {
 		t.Fatalf("Expected 2 anyOf combinations, got %d", len(configField.AnyOf))
@@ -866,12 +867,12 @@ schema TestSchema:
 	if len(schema.OneOf) != 2 {
 		t.Fatalf("Expected 2 schema-level oneOf combinations, got %d", len(schema.OneOf))
 	}
-	
+
 	// Check first oneOf combination
 	if len(schema.OneOf[0]) != 1 || schema.OneOf[0][0] != "groupName" {
 		t.Errorf("Expected first oneOf to be ['groupName'], got %v", schema.OneOf[0])
 	}
-	
+
 	// Check second oneOf combination
 	if len(schema.OneOf[1]) != 1 || schema.OneOf[1][0] != "groupRef" {
 		t.Errorf("Expected second oneOf to be ['groupRef'], got %v", schema.OneOf[1])
@@ -905,12 +906,12 @@ schema TestSchema:
 	if len(schema.AnyOf) != 2 {
 		t.Fatalf("Expected 2 schema-level anyOf combinations, got %d", len(schema.AnyOf))
 	}
-	
+
 	// Check first anyOf combination
 	if len(schema.AnyOf[0]) != 1 || schema.AnyOf[0][0] != "userEmail" {
 		t.Errorf("Expected first anyOf to be ['userEmail'], got %v", schema.AnyOf[0])
 	}
-	
+
 	// Check second anyOf combination
 	if len(schema.AnyOf[1]) != 1 || schema.AnyOf[1][0] != "userObjectId" {
 		t.Errorf("Expected second anyOf to be ['userObjectId'], got %v", schema.AnyOf[1])
@@ -944,7 +945,7 @@ func TestParseKCLFileWithItemsFormat(t *testing.T) {
 	if len(schema.Fields) < 2 {
 		t.Fatal("Expected at least 2 fields")
 	}
-	
+
 	emailsField := schema.Fields[0]
 	if emailsField.Name != "emails" {
 		t.Errorf("Expected field name 'emails', got '%s'", emailsField.Name)
@@ -952,7 +953,7 @@ func TestParseKCLFileWithItemsFormat(t *testing.T) {
 	if emailsField.ItemsFormat != "email" {
 		t.Errorf("Expected itemsFormat 'email', got '%s'", emailsField.ItemsFormat)
 	}
-	
+
 	// Check ids field
 	idsField := schema.Fields[1]
 	if idsField.Name != "ids" {
@@ -963,4 +964,318 @@ func TestParseKCLFileWithItemsFormat(t *testing.T) {
 	}
 }
 
+func TestParseKCLFileWithSpecAnnotation(t *testing.T) {
+	// Create a temporary test file with spec annotations
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test_spec.k")
 
+	content := `schema TestResource:
+    # Regular spec.parameters field
+    name: str
+    replicas?: int = 3
+    
+    # @spec
+    compositionSelector?: {str:str}
+    
+    # @spec
+    compositionRef?: str
+    
+    # @spec
+    # @immutable
+    compositionRevisionRef?: str
+    
+    # @status
+    ready: bool
+`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Parse the file
+	result, err := ParseKCLFileWithSchemas(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+	}
+
+	schema := result.Primary
+	if schema == nil {
+		t.Fatal("Expected primary schema to be set")
+	}
+
+	// Check number of fields
+	if len(schema.Fields) != 6 {
+		t.Errorf("Expected 6 fields, got %d", len(schema.Fields))
+	}
+
+	// Check name field (should NOT be spec or status)
+	nameField := schema.Fields[0]
+	if nameField.Name != "name" {
+		t.Errorf("Expected field name 'name', got '%s'", nameField.Name)
+	}
+	if nameField.IsSpec {
+		t.Error("Expected 'name' field to NOT be a spec-level field")
+	}
+	if nameField.IsStatus {
+		t.Error("Expected 'name' field to NOT be a status field")
+	}
+
+	// Check replicas field (should NOT be spec or status)
+	replicasField := schema.Fields[1]
+	if replicasField.Name != "replicas" {
+		t.Errorf("Expected field name 'replicas', got '%s'", replicasField.Name)
+	}
+	if replicasField.IsSpec {
+		t.Error("Expected 'replicas' field to NOT be a spec-level field")
+	}
+
+	// Check compositionSelector field (should be spec)
+	compositionSelectorField := schema.Fields[2]
+	if compositionSelectorField.Name != "compositionSelector" {
+		t.Errorf("Expected field name 'compositionSelector', got '%s'", compositionSelectorField.Name)
+	}
+	if !compositionSelectorField.IsSpec {
+		t.Error("Expected 'compositionSelector' field to be a spec-level field")
+	}
+
+	// Check compositionRef field (should be spec)
+	compositionRefField := schema.Fields[3]
+	if compositionRefField.Name != "compositionRef" {
+		t.Errorf("Expected field name 'compositionRef', got '%s'", compositionRefField.Name)
+	}
+	if !compositionRefField.IsSpec {
+		t.Error("Expected 'compositionRef' field to be a spec-level field")
+	}
+
+	// Check compositionRevisionRef field (should be spec and immutable)
+	compositionRevisionRefField := schema.Fields[4]
+	if compositionRevisionRefField.Name != "compositionRevisionRef" {
+		t.Errorf("Expected field name 'compositionRevisionRef', got '%s'", compositionRevisionRefField.Name)
+	}
+	if !compositionRevisionRefField.IsSpec {
+		t.Error("Expected 'compositionRevisionRef' field to be a spec-level field")
+	}
+	if !compositionRevisionRefField.Immutable {
+		t.Error("Expected 'compositionRevisionRef' field to be immutable")
+	}
+
+	// Check ready field (should be status, NOT spec)
+	readyField := schema.Fields[5]
+	if readyField.Name != "ready" {
+		t.Errorf("Expected field name 'ready', got '%s'", readyField.Name)
+	}
+	if !readyField.IsStatus {
+		t.Error("Expected 'ready' field to be a status field")
+	}
+	if readyField.IsSpec {
+		t.Error("Expected 'ready' field to NOT be a spec-level field")
+	}
+}
+
+func TestParseKCLFileWithSpecPathAnnotation(t *testing.T) {
+	// Create a temporary test file with @spec.path annotations on schemas
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test_spec_path.k")
+
+	content := `# @xrd
+schema MyApp:
+    name: str
+    replicas?: int = 3
+
+# @spec.customParameters
+schema CustomParams:
+    customField1: str
+    customField2?: int
+
+# @spec.connectionSecret
+schema ConnectionSecret:
+    name: str
+    namespace?: str
+`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Parse the file
+	result, err := ParseKCLFileWithSchemas(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+	}
+
+	// Check that we have 3 schemas
+	if len(result.Schemas) != 3 {
+		t.Errorf("Expected 3 schemas, got %d", len(result.Schemas))
+	}
+
+	// Check the main schema (MyApp)
+	mainSchema := result.Schemas["MyApp"]
+	if mainSchema == nil {
+		t.Fatal("Expected MyApp schema to be present")
+	}
+	if mainSchema.SpecPath != "" {
+		t.Errorf("Expected MyApp schema to have empty SpecPath, got '%s'", mainSchema.SpecPath)
+	}
+	if !mainSchema.IsXRD {
+		t.Error("Expected MyApp schema to be marked as XRD")
+	}
+
+	// Check the CustomParams schema
+	customParamsSchema := result.Schemas["CustomParams"]
+	if customParamsSchema == nil {
+		t.Fatal("Expected CustomParams schema to be present")
+	}
+	if customParamsSchema.SpecPath != "customParameters" {
+		t.Errorf("Expected CustomParams schema to have SpecPath 'customParameters', got '%s'", customParamsSchema.SpecPath)
+	}
+	if len(customParamsSchema.Fields) != 2 {
+		t.Errorf("Expected CustomParams to have 2 fields, got %d", len(customParamsSchema.Fields))
+	}
+
+	// Check the ConnectionSecret schema
+	connectionSecretSchema := result.Schemas["ConnectionSecret"]
+	if connectionSecretSchema == nil {
+		t.Fatal("Expected ConnectionSecret schema to be present")
+	}
+	if connectionSecretSchema.SpecPath != "connectionSecret" {
+		t.Errorf("Expected ConnectionSecret schema to have SpecPath 'connectionSecret', got '%s'", connectionSecretSchema.SpecPath)
+	}
+	if len(connectionSecretSchema.Fields) != 2 {
+		t.Errorf("Expected ConnectionSecret to have 2 fields, got %d", len(connectionSecretSchema.Fields))
+	}
+}
+
+func TestParseKCLFileWithDollarPrefixFields(t *testing.T) {
+	// Create a temporary test file with fields that have $ prefix (should be omitted)
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test_dollar_prefix.k")
+
+	content := `schema MyApp:
+    # Regular field
+    name: str
+    
+    # Internal field - should be omitted
+    $internalVar: str
+    
+    # Another regular field
+    replicas?: int = 3
+    
+    # Another internal KCL field - should be omitted
+    $filter: str
+    
+    # One more regular field
+    region?: str = "us-east-1"
+`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Parse the file
+	result, err := ParseKCLFileWithSchemas(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+	}
+
+	schema := result.Primary
+	if schema == nil {
+		t.Fatal("Expected primary schema to be set")
+	}
+
+	// Check that we only have 3 fields (the ones without $ prefix)
+	if len(schema.Fields) != 5 {
+		t.Errorf("Expected 5 fields, got %d", len(schema.Fields))
+	}
+
+	// Verify the field names
+	expectedFields := map[string]bool{
+		"name":        false,
+		"replicas":    false,
+		"region":      false,
+		"filter":      false,
+		"internalVar": false,
+	}
+
+	for _, field := range schema.Fields {
+		if _, exists := expectedFields[field.Name]; exists {
+			expectedFields[field.Name] = true
+		} else {
+			t.Errorf("Unexpected field '%s' found", field.Name)
+		}
+
+		// Verify no field starts with $
+		if strings.HasPrefix(field.Name, "$") {
+			t.Errorf("Field '%s' should have been filtered out (starts with $)", field.Name)
+		}
+	}
+
+	// Verify all expected fields were found
+	for fieldName, found := range expectedFields {
+		if !found {
+			t.Errorf("Expected field '%s' not found", fieldName)
+		}
+	}
+}
+
+func TestParseKCLFileWithItemsPreserveUnknownFields(t *testing.T) {
+	// Create a temporary test file with itemsPreserveUnknownFields annotation
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test_items_preserve.k")
+
+	content := `schema MyApp:
+    # @itemsPreserveUnknownFields
+    configs: [{str:str}]
+    
+    # @preserveUnknownFields
+    filter: [{any:any}]
+`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Parse the file
+	result, err := ParseKCLFileWithSchemas(testFile)
+	if err != nil {
+		t.Fatalf("ParseKCLFileWithSchemas failed: %v", err)
+	}
+
+	schema := result.Primary
+	if schema == nil {
+		t.Fatal("Expected primary schema to be set")
+	}
+
+	// Check configs field has ItemsPreserveUnknownFields set
+	var configsField *Field
+	for i := range schema.Fields {
+		if schema.Fields[i].Name == "configs" {
+			configsField = &schema.Fields[i]
+			break
+		}
+	}
+
+	if configsField == nil {
+		t.Fatal("Expected 'configs' field to be present")
+	}
+
+	if !configsField.ItemsPreserveUnknownFields {
+		t.Error("Expected ItemsPreserveUnknownFields to be true for 'configs'")
+	}
+
+	// Check filter field has PreserveUnknownFields set (backward compatibility)
+	var filterField *Field
+	for i := range schema.Fields {
+		if schema.Fields[i].Name == "filter" {
+			filterField = &schema.Fields[i]
+			break
+		}
+	}
+
+	if filterField == nil {
+		t.Fatal("Expected 'filter' field to be present")
+	}
+
+	if !filterField.PreserveUnknownFields {
+		t.Error("Expected PreserveUnknownFields to be true for 'filter'")
+	}
+}

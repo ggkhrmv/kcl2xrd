@@ -18,6 +18,7 @@ type Schema struct {
 	Fields      []Field
 	IsXRD       bool   // marked with @xrd annotation
 	IsStatus    bool   // marked with @status annotation - used as status schema
+	SpecPath    string // marked with @spec.path annotation - used to place fields at spec.path
 	// Schema-level OneOf and AnyOf validations (apply to parameters object)
 	OneOf [][]string // oneOf validation - array of required field combinations
 	AnyOf [][]string // anyOf validation - array of required field combinations
@@ -32,14 +33,14 @@ type ParseResult struct {
 
 // XRDMetadata contains metadata for XRD generation parsed from KCL variables
 type XRDMetadata struct {
-	XRKind                       string
-	XRVersion                    string
-	Group                        string
-	Categories                   []string
-	PrinterColumns               []PrinterColumn
-	Served                       *bool
-	Referenceable                *bool
-	StatusPreserveUnknownFields  *bool
+	XRKind                      string
+	XRVersion                   string
+	Group                       string
+	Categories                  []string
+	PrinterColumns              []PrinterColumn
+	Served                      *bool
+	Referenceable               *bool
+	StatusPreserveUnknownFields *bool
 }
 
 // PrinterColumn represents an additional printer column
@@ -58,25 +59,27 @@ type Field struct {
 	Required    bool
 	Default     string
 	// Validation fields
-	Pattern     string // regex pattern for string validation
-	MinLength   *int   // minimum length for strings
-	MaxLength   *int   // maximum length for strings
-	Minimum     *int   // minimum value for numbers
-	Maximum     *int   // maximum value for numbers
-	MinItems    *int   // minimum number of items in arrays
-	MaxItems    *int   // maximum number of items in arrays
-	Format      string // format for strings (e.g., "date-time")
-	ItemsFormat string // format for array items (e.g., "email" for [str] arrays)
-	Enum        []string // enumeration of allowed values
-	Immutable   bool   // x-kubernetes-immutable marker
+	Pattern        string          // regex pattern for string validation
+	MinLength      *int            // minimum length for strings
+	MaxLength      *int            // maximum length for strings
+	Minimum        *int            // minimum value for numbers
+	Maximum        *int            // maximum value for numbers
+	MinItems       *int            // minimum number of items in arrays
+	MaxItems       *int            // maximum number of items in arrays
+	Format         string          // format for strings (e.g., "date-time")
+	ItemsFormat    string          // format for array items (e.g., "email" for [str] arrays)
+	Enum           []string        // enumeration of allowed values
+	Immutable      bool            // x-kubernetes-immutable marker
 	CELValidations []CELValidation // CEL validation rules
 	// Kubernetes-specific annotations
-	PreserveUnknownFields bool   // x-kubernetes-preserve-unknown-fields
-	MapType               string // x-kubernetes-map-type
-	ListType              string // x-kubernetes-list-type
-	ListMapKeys           []string // x-kubernetes-list-map-keys
-	IsStatus              bool   // marks field as status field (goes in status section instead of spec)
-	AdditionalPropertiesAnnotation bool // @additionalProperties annotation
+	PreserveUnknownFields          bool     // x-kubernetes-preserve-unknown-fields
+	MapType                        string   // x-kubernetes-map-type
+	ListType                       string   // x-kubernetes-list-type
+	ListMapKeys                    []string // x-kubernetes-list-map-keys
+	IsStatus                       bool     // marks field as status field (goes in status section instead of spec)
+	IsSpec                         bool     // marks field as spec-level field (goes directly under spec, not in spec.parameters)
+	AdditionalPropertiesAnnotation bool     // @additionalProperties annotation
+	ItemsPreserveUnknownFields     bool     // @itemsPreserveUnknownFields - only applies to array items
 	// OneOf and AnyOf validations
 	OneOf [][]string // oneOf validation - array of required field combinations
 	AnyOf [][]string // anyOf validation - array of required field combinations
@@ -102,7 +105,7 @@ func ParseKCLFile(filename string) (*Schema, error) {
 func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	// First, try to evaluate metadata using KCL runtime for more flexibility
 	kclMetadata, _ := evaluateMetadataWithKCL(filename)
-	
+
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
@@ -115,14 +118,14 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	var inSchema bool
 	var inDocstring bool
 	var docstringLines []string
-	
+
 	schemas := make(map[string]*Schema)
 	var primarySchema *Schema
 	metadata := &XRDMetadata{}
 
 	schemaRegex := regexp.MustCompile(`^\s*schema\s+(\w+)\s*:?\s*$`)
-	fieldRegex := regexp.MustCompile(`^\s*(\w+)\s*(\?)?:\s*(.+?)(?:\s*=\s*(.+))?\s*$`)
-	
+	fieldRegex := regexp.MustCompile(`^\s*\$?(\w+)\s*(\?)?:\s*(.+?)(?:\s*=\s*(.+))?\s*$`)
+
 	// Metadata variable patterns (using __xrd_ prefix for unique naming)
 	xrKindRegex := regexp.MustCompile(`^\s*__xrd_kind\s*=\s*['"](.*?)['"]\s*$`)
 	xrVersionRegex := regexp.MustCompile(`^\s*__xrd_version\s*=\s*['"](.*?)['"]\s*$`)
@@ -133,7 +136,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	servedRegex := regexp.MustCompile(`^\s*__xrd_served\s*=\s*(true|false|True|False)\s*$`)
 	referenceableRegex := regexp.MustCompile(`^\s*__xrd_referenceable\s*=\s*(true|false|True|False)\s*$`)
 	printerColumnsRegex := regexp.MustCompile(`^\s*__xrd_printer_columns\s*=\s*\[(.*?)\]\s*$`)
-	
+
 	// Validation annotation patterns
 	patternRegex := regexp.MustCompile(`@pattern\s*\(\s*['"](.*?)['"]\s*\)`)
 	minLengthRegex := regexp.MustCompile(`@minLength\s*\(\s*(\d+)\s*\)`)
@@ -148,18 +151,21 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	immutableRegex := regexp.MustCompile(`@immutable`)
 	celValidationRegex := regexp.MustCompile(`@validate\s*\(\s*['"](.*?)['"]\s*(?:,\s*['"](.*?)['"]\s*)?\)`)
 	preserveUnknownFieldsRegex := regexp.MustCompile(`@preserveUnknownFields`)
+	itemsPreserveUnknownFieldsRegex := regexp.MustCompile(`@itemsPreserveUnknownFields`)
 	additionalPropertiesRegex := regexp.MustCompile(`@additionalProperties`)
 	mapTypeRegex := regexp.MustCompile(`@mapType\s*\(\s*['"](.*?)['"]\s*\)`)
 	listTypeRegex := regexp.MustCompile(`@listType\s*\(\s*['"](.*?)['"]\s*\)`)
 	listMapKeysRegex := regexp.MustCompile(`@listMapKeys\s*\(\s*\[(.*?)\]\s*\)`)
 	statusAnnotationRegex := regexp.MustCompile(`@status`)
+	specAnnotationRegex := regexp.MustCompile(`@spec`)
+	specPathAnnotationRegex := regexp.MustCompile(`@spec\.(\w+)`)
 	xrdAnnotationRegex := regexp.MustCompile(`@xrd`)
 	oneOfRegex := regexp.MustCompile(`@oneOf\s*\(\s*\[(.*?)\]\s*\)`)
 	anyOfRegex := regexp.MustCompile(`@anyOf\s*\(\s*\[(.*?)\]\s*\)`)
-	
+
 	var pendingAnnotations []string
 	var pendingComments []string
-	
+
 	// Track variable assignments for resolving expressions
 	variables := make(map[string]string)
 	// Regex for simple variable assignments like: _xrSubgroup = "aws"
@@ -177,7 +183,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 			}
 			continue
 		}
-		
+
 		// Parse metadata variables (before schema definitions)
 		if !inSchema {
 			// Track variable assignments for later resolution
@@ -186,7 +192,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				varValue := matches[2]
 				variables[varName] = varValue
 			}
-			
+
 			if matches := xrKindRegex.FindStringSubmatch(trimmedLine); len(matches) > 1 {
 				metadata.XRKind = matches[1]
 				continue
@@ -250,12 +256,12 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				continue
 			}
 		}
-		
+
 		// Check for comments (annotations and descriptions)
 		if strings.HasPrefix(trimmedLine, "#") && !inDocstring {
 			commentText := strings.TrimPrefix(trimmedLine, "#")
 			commentText = strings.TrimSpace(commentText)
-			
+
 			// Check if it's an annotation
 			if strings.HasPrefix(commentText, "@") {
 				pendingAnnotations = append(pendingAnnotations, trimmedLine)
@@ -294,13 +300,13 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				schemas[currentSchema.Name] = currentSchema
 				primarySchema = currentSchema
 			}
-			
+
 			// Start new schema
 			currentSchema = &Schema{
 				Name:   matches[1],
 				Fields: []Field{},
 			}
-			
+
 			// Check if this schema is marked with @xrd or @status annotation
 			for _, annotation := range pendingAnnotations {
 				if xrdAnnotationRegex.MatchString(annotation) {
@@ -308,6 +314,10 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 				}
 				if statusAnnotationRegex.MatchString(annotation) {
 					currentSchema.IsStatus = true
+				}
+				// Check for @spec.path annotation
+				if matches := specPathAnnotationRegex.FindStringSubmatch(annotation); len(matches) > 1 {
+					currentSchema.SpecPath = matches[1]
 				}
 				// Check for schema-level oneOf
 				if matches := oneOfRegex.FindStringSubmatch(annotation); len(matches) > 1 {
@@ -320,7 +330,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 			}
 			pendingAnnotations = nil
 			pendingComments = nil
-			
+
 			inSchema = true
 			continue
 		}
@@ -331,7 +341,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 			inSchema = false
 			currentField = nil
 		}
-		
+
 		// Parse field definitions
 		if inSchema && currentSchema != nil {
 			if matches := fieldRegex.FindStringSubmatch(line); matches != nil {
@@ -348,7 +358,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 					parts := strings.Split(fieldType, ",")
 					fieldType = strings.TrimSpace(parts[0])
 				}
-				
+
 				// Remove inline comments from default value if present
 				if defaultValue != "" && strings.Contains(defaultValue, "#") {
 					parts := strings.SplitN(defaultValue, "#", 2)
@@ -361,20 +371,20 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 					Required: !optional,
 					Default:  defaultValue,
 				}
-				
+
 				// Set description from pending comments (above field)
 				if len(pendingComments) > 0 {
 					field.Description = strings.Join(pendingComments, "\n")
 					pendingComments = nil
 				}
-				
+
 				// Apply validation annotations from pending comments
-				applyValidationAnnotations(&field, pendingAnnotations, 
-					patternRegex, minLengthRegex, maxLengthRegex, 
+				applyValidationAnnotations(&field, pendingAnnotations,
+					patternRegex, minLengthRegex, maxLengthRegex,
 					minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, itemsFormatRegex, enumRegex, immutableRegex, celValidationRegex,
-					preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, oneOfRegex, anyOfRegex)
+					preserveUnknownFieldsRegex, itemsPreserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, specAnnotationRegex, oneOfRegex, anyOfRegex)
 				pendingAnnotations = nil
-				
+
 				currentSchema.Fields = append(currentSchema.Fields, field)
 				currentField = &currentSchema.Fields[len(currentSchema.Fields)-1]
 			}
@@ -384,7 +394,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("error reading file: %w", err)
 	}
-	
+
 	// Save the last schema
 	if currentSchema != nil {
 		schemas[currentSchema.Name] = currentSchema
@@ -394,7 +404,7 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 	if primarySchema == nil {
 		return nil, fmt.Errorf("no schema found in file")
 	}
-	
+
 	// Merge KCL-evaluated metadata with manually parsed metadata
 	// KCL evaluation takes priority as it's more accurate
 	if kclMetadata.XRKind != "" {
@@ -427,68 +437,68 @@ func ParseKCLFileWithSchemas(filename string) (*ParseResult, error) {
 }
 
 // applyValidationAnnotations applies validation annotations from comments to a field
-func applyValidationAnnotations(field *Field, annotations []string, 
+func applyValidationAnnotations(field *Field, annotations []string,
 	patternRegex, minLengthRegex, maxLengthRegex, minimumRegex, maximumRegex, minItemsRegex, maxItemsRegex, formatRegex, itemsFormatRegex, enumRegex, immutableRegex, celValidationRegex,
-	preserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, oneOfRegex, anyOfRegex *regexp.Regexp) {
-	
+	preserveUnknownFieldsRegex, itemsPreserveUnknownFieldsRegex, additionalPropertiesRegex, mapTypeRegex, listTypeRegex, listMapKeysRegex, statusAnnotationRegex, specAnnotationRegex, oneOfRegex, anyOfRegex *regexp.Regexp) {
+
 	for _, annotation := range annotations {
 		// Check for pattern
 		if matches := patternRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			field.Pattern = matches[1]
 		}
-		
+
 		// Check for minLength
 		if matches := minLengthRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			if val, err := strconv.Atoi(matches[1]); err == nil {
 				field.MinLength = &val
 			}
 		}
-		
+
 		// Check for maxLength
 		if matches := maxLengthRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			if val, err := strconv.Atoi(matches[1]); err == nil {
 				field.MaxLength = &val
 			}
 		}
-		
+
 		// Check for minimum
 		if matches := minimumRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			if val, err := strconv.Atoi(matches[1]); err == nil {
 				field.Minimum = &val
 			}
 		}
-		
+
 		// Check for maximum
 		if matches := maximumRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			if val, err := strconv.Atoi(matches[1]); err == nil {
 				field.Maximum = &val
 			}
 		}
-		
+
 		// Check for minItems
 		if matches := minItemsRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			if val, err := strconv.Atoi(matches[1]); err == nil {
 				field.MinItems = &val
 			}
 		}
-		
+
 		// Check for maxItems
 		if matches := maxItemsRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			if val, err := strconv.Atoi(matches[1]); err == nil {
 				field.MaxItems = &val
 			}
 		}
-		
+
 		// Check for format
 		if matches := formatRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			field.Format = matches[1]
 		}
-		
+
 		// Check for itemsFormat
 		if matches := itemsFormatRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			field.ItemsFormat = matches[1]
 		}
-		
+
 		// Check for enum
 		if matches := enumRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			enumStr := matches[1]
@@ -501,12 +511,12 @@ func applyValidationAnnotations(field *Field, annotations []string,
 			}
 			field.Enum = enumValues
 		}
-		
+
 		// Check for immutable
 		if immutableRegex.MatchString(annotation) {
 			field.Immutable = true
 		}
-		
+
 		// Check for CEL validation
 		if matches := celValidationRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			rule := matches[1]
@@ -519,27 +529,32 @@ func applyValidationAnnotations(field *Field, annotations []string,
 				Message: message,
 			})
 		}
-		
+
 		// Check for preserveUnknownFields
 		if preserveUnknownFieldsRegex.MatchString(annotation) {
 			field.PreserveUnknownFields = true
 		}
-		
+
+		// Check for itemsPreserveUnknownFields
+		if itemsPreserveUnknownFieldsRegex.MatchString(annotation) {
+			field.ItemsPreserveUnknownFields = true
+		}
+
 		// Check for additionalProperties
 		if additionalPropertiesRegex.MatchString(annotation) {
 			field.AdditionalPropertiesAnnotation = true
 		}
-		
+
 		// Check for mapType
 		if matches := mapTypeRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			field.MapType = matches[1]
 		}
-		
+
 		// Check for listType
 		if matches := listTypeRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			field.ListType = matches[1]
 		}
-		
+
 		// Check for listMapKeys
 		if matches := listMapKeysRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			keysStr := matches[1]
@@ -551,17 +566,22 @@ func applyValidationAnnotations(field *Field, annotations []string,
 			}
 			field.ListMapKeys = keys
 		}
-		
+
 		// Check for status annotation
 		if statusAnnotationRegex.MatchString(annotation) {
 			field.IsStatus = true
 		}
-		
+
+		// Check for spec annotation
+		if specAnnotationRegex.MatchString(annotation) {
+			field.IsSpec = true
+		}
+
 		// Check for oneOf
 		if matches := oneOfRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			field.OneOf = parseRequiredCombinations(matches[1])
 		}
-		
+
 		// Check for anyOf
 		if matches := anyOfRegex.FindStringSubmatch(annotation); len(matches) > 1 {
 			field.AnyOf = parseRequiredCombinations(matches[1])
@@ -573,19 +593,19 @@ func applyValidationAnnotations(field *Field, annotations []string,
 // Example: [["groupName"], ["groupRef"]] or [["userEmail"], ["userObjectId"]]
 func parseRequiredCombinations(content string) [][]string {
 	var result [][]string
-	
+
 	// Remove outer brackets and split by "],["
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return result
 	}
-	
+
 	// Split into individual combinations like ["field1"], ["field2"]
 	// We need to handle nested brackets properly
 	var current strings.Builder
 	depth := 0
 	var combinations []string
-	
+
 	for _, ch := range content {
 		if ch == '[' {
 			depth++
@@ -611,7 +631,7 @@ func parseRequiredCombinations(content string) [][]string {
 			current.WriteRune(ch)
 		}
 	}
-	
+
 	// Parse each combination
 	for _, combo := range combinations {
 		var fields []string
@@ -628,7 +648,7 @@ func parseRequiredCombinations(content string) [][]string {
 			result = append(result, fields)
 		}
 	}
-	
+
 	return result
 }
 
@@ -638,7 +658,7 @@ func splitPrinterColumns(s string) []string {
 	var current strings.Builder
 	inQuote := false
 	quoteChar := rune(0)
-	
+
 	for i, ch := range s {
 		if (ch == '"' || ch == '\'') && (i == 0 || s[i-1] != '\\') {
 			if inQuote {
@@ -652,7 +672,7 @@ func splitPrinterColumns(s string) []string {
 			}
 			continue
 		}
-		
+
 		if ch == ',' && !inQuote {
 			trimmed := strings.TrimSpace(current.String())
 			trimmed = strings.Trim(trimmed, `"'`)
@@ -662,17 +682,17 @@ func splitPrinterColumns(s string) []string {
 			current.Reset()
 			continue
 		}
-		
+
 		current.WriteRune(ch)
 	}
-	
+
 	// Add last item
 	trimmed := strings.TrimSpace(current.String())
 	trimmed = strings.Trim(trimmed, `"'`)
 	if trimmed != "" {
 		result = append(result, trimmed)
 	}
-	
+
 	return result
 }
 
@@ -686,19 +706,19 @@ func resolveFormatExpression(line string, variables map[string]string) string {
 	if len(matches) < 3 {
 		return ""
 	}
-	
+
 	formatStr := matches[1]
 	argsStr := matches[2]
-	
+
 	// Parse the arguments
 	args := strings.Split(argsStr, ",")
 	var resolvedArgs []string
-	
+
 	for _, arg := range args {
 		arg = strings.TrimSpace(arg)
 		// Remove leading/trailing quotes if present
 		arg = strings.Trim(arg, `"'`)
-		
+
 		// Look up variable value
 		if val, exists := variables[arg]; exists {
 			resolvedArgs = append(resolvedArgs, val)
@@ -708,19 +728,19 @@ func resolveFormatExpression(line string, variables map[string]string) string {
 			return ""
 		}
 	}
-	
+
 	// Replace {} placeholders with actual values
 	result := formatStr
 	for _, val := range resolvedArgs {
 		result = strings.Replace(result, "{}", val, 1)
 	}
-	
+
 	// Check if all placeholders were replaced
 	if strings.Contains(result, "{}") {
 		// Still has unreplaced placeholders
 		return ""
 	}
-	
+
 	return result
 }
 
@@ -728,7 +748,7 @@ func resolveFormatExpression(line string, variables map[string]string) string {
 // This is more flexible than parsing format strings manually
 func evaluateMetadataWithKCL(filename string) (*XRDMetadata, error) {
 	metadata := &XRDMetadata{}
-	
+
 	// First, try to run KCL with the file as-is (with imports)
 	// This allows imports to work when they can be resolved
 	result, err := kcl.RunFiles([]string{filename}, kcl.WithShowHidden(true))
@@ -739,7 +759,7 @@ func evaluateMetadataWithKCL(filename string) (*XRDMetadata, error) {
 		if readErr != nil {
 			return metadata, nil
 		}
-		
+
 		// Filter out import statements
 		lines := strings.Split(string(content), "\n")
 		var filteredLines []string
@@ -752,7 +772,7 @@ func evaluateMetadataWithKCL(filename string) (*XRDMetadata, error) {
 			filteredLines = append(filteredLines, line)
 		}
 		filteredContent := strings.Join(filteredLines, "\n")
-		
+
 		// Try running without imports
 		result, err = kcl.Run("", kcl.WithCode(filteredContent), kcl.WithShowHidden(true))
 		if err != nil {
@@ -760,49 +780,49 @@ func evaluateMetadataWithKCL(filename string) (*XRDMetadata, error) {
 			return metadata, nil
 		}
 	}
-	
+
 	// Extract metadata variables from the result
 	kclResult := result.First()
 	if kclResult == nil {
 		return metadata, nil
 	}
-	
+
 	// Convert to map
 	resultMap, err := kclResult.ToMap()
 	if err != nil {
 		return metadata, nil
 	}
-	
+
 	// Try to extract __xrd_kind
 	if kind, ok := resultMap["__xrd_kind"].(string); ok {
 		metadata.XRKind = kind
 	}
-	
+
 	// Try to extract __xrd_group
 	if group, ok := resultMap["__xrd_group"].(string); ok {
 		metadata.Group = group
 	}
-	
+
 	// Try to extract __xrd_version
 	if version, ok := resultMap["__xrd_version"].(string); ok {
 		metadata.XRVersion = version
 	}
-	
+
 	// Try to extract __xrd_served
 	if served, ok := resultMap["__xrd_served"].(bool); ok {
 		metadata.Served = &served
 	}
-	
+
 	// Try to extract __xrd_referenceable
 	if referenceable, ok := resultMap["__xrd_referenceable"].(bool); ok {
 		metadata.Referenceable = &referenceable
 	}
-	
+
 	// Try to extract __xrd_status_preserve_unknown_fields
 	if statusPreserveUnknownFields, ok := resultMap["__xrd_status_preserve_unknown_fields"].(bool); ok {
 		metadata.StatusPreserveUnknownFields = &statusPreserveUnknownFields
 	}
-	
+
 	// Try to extract __xrd_categories
 	if categories, ok := resultMap["__xrd_categories"].([]interface{}); ok {
 		for _, cat := range categories {
@@ -811,6 +831,6 @@ func evaluateMetadataWithKCL(filename string) (*XRDMetadata, error) {
 			}
 		}
 	}
-	
+
 	return metadata, nil
 }

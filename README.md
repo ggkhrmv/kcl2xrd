@@ -27,9 +27,12 @@ cd kcl2xrd && make build
 - **KCL runtime evaluation** - automatically evaluates metadata variables including format expressions, property access, and variable references
 - **Import support** - reuse central configuration files across multiple XRDs with KCL imports
 - **`@xrd` annotation** - mark parent schema, ignore unrelated code
+- **KCL reserved fields** - prefixed with `$` the KCL reserved fields can be used for schema definition
 - **Validation annotations** - patterns, enums, ranges, string/numeric constraints, CEL expressions, oneOf/anyOf schema composition
-- **Kubernetes-specific annotations** - immutability, preserveUnknownFields, mapType, listType, listMapKeys, additionalProperties
+- **Kubernetes-specific annotations** - immutability, preserveUnknownFields (with granular control for array items), mapType, listType, listMapKeys, additionalProperties
 - **`@status` annotation** - separate status fields or define separate status schema for proper Crossplane resource state management
+- **`@spec` annotation** - define fields directly under `spec` (not `spec.parameters`) for Crossplane composition selectors and other spec-level fields
+- **`@spec.path` annotation** - define entire schemas as objects at custom paths under `spec` (e.g., `writeConnectionSecretToRef`, `publishConnectionDetailsTo`)
 - **Nested schema expansion** - automatic reference resolution
 - **`any` type support** - fields without type constraints for maximum flexibility (IAM policies, etc.)
 - **`{any:any}` syntax** - arbitrary property objects with `@preserveUnknownFields`
@@ -175,6 +178,54 @@ Marks the schema to be converted to XRD. Only one schema in a file should be mar
 schema MyResource:
     name: str
 ```
+
+### Field Filtering
+
+#### `$` Prefix - KCL Reserved fields
+Fields with names starting with `$` are treated as KCL internal variables and are automatically omitted from the generated XRD. This is useful for KCL-specific fields like `$filter` or internal configuration variables that should not appear in the Crossplane XRD.
+
+```kcl
+schema MyApp:
+    # Regular field - included in XRD
+    name: str
+    replicas?: int = 3
+    
+    # KCL reserved keyword with $ prefix - rendered as "filter" in XRD
+    $filter: str
+    
+    # KCL reserved keyword with $ prefix - rendered as "type" in XRD
+    $type: str
+    
+    # Regular field - included in XRD
+    region?: str = "us-east-1"
+```
+
+This generates an XRD with the $ prefix stripped from field names:
+```yaml
+spec:
+  properties:
+    parameters:
+      type: object
+      properties:
+        name:
+          type: string
+        replicas:
+          type: integer
+          default: 3
+        filter:
+          type: string
+        type:
+          type: string
+        region:
+          type: string
+          default: us-east-1
+```
+
+**Key points:**
+- Use $ prefix for KCL reserved keywords (e.g., $filter, $type, $import)
+- The $ is automatically stripped in the generated XRD
+- Allows you to define fields with names that conflict with KCL syntax
+- Works with all field types and validation annotations
 
 ### String Validation Annotations
 
@@ -410,10 +461,56 @@ resourceId: str
 #### `@preserveUnknownFields`
 Allows arbitrary properties (sets `x-kubernetes-preserve-unknown-fields: true`). Typically used with `{any:any}` type.
 
+**For object fields:**
 ```kcl
 # @preserveUnknownFields
 config: {any:any}
 ```
+
+**For array fields with `[{any:any}]` pattern:**
+When used with `[{any:any}]`, the annotation applies only to the array **items**, not the array itself. This matches the desired behavior for Kubernetes CRDs where you want items to be flexible but the array structure to be strict.
+
+```kcl
+schema MyApp:
+    # @preserveUnknownFields
+    filter: [{any:any}]
+```
+
+This generates:
+```yaml
+filter:
+  type: array
+  items:
+    type: object
+    x-kubernetes-preserve-unknown-fields: true
+```
+
+Note: `x-kubernetes-preserve-unknown-fields` is on the items, NOT on the array itself.
+
+#### `@itemsPreserveUnknownFields`
+Applies `x-kubernetes-preserve-unknown-fields: true` only to array items, not the array itself. This provides explicit control for any array type.
+
+```kcl
+schema MyApp:
+    # @itemsPreserveUnknownFields
+    configs: [{str:str}]
+```
+
+This generates:
+```yaml
+configs:
+  type: array
+  items:
+    type: object
+    additionalProperties:
+      type: string
+    x-kubernetes-preserve-unknown-fields: true
+```
+
+**Use cases:**
+- Use `@preserveUnknownFields` on `[{any:any}]` for backward compatibility (applies to items)
+- Use `@itemsPreserveUnknownFields` for explicit control on any array type
+- Use `@preserveUnknownFields` on non-array fields to apply to the field itself
 
 #### `@mapType(type)`
 Sets `x-kubernetes-map-type`. Valid values: `"atomic"`, `"granular"`.
@@ -500,6 +597,152 @@ schema KafkaCluster:
 ```
 
 This generates a status section with just `x-kubernetes-preserve-unknown-fields: true`, allowing any status fields to be set dynamically.
+
+#### `@spec`
+Marks a field as a spec-level field, placing it directly under `spec` instead of `spec.parameters`. This is useful for Crossplane-specific fields like `compositionSelector`, `compositionRef`, or `compositionRevisionRef` that need to be at the spec level.
+
+**Basic usage:**
+
+```kcl
+schema MyComposite:
+    # Regular fields - go to spec.parameters
+    name: str
+    replicas?: int = 3
+    
+    # Spec-level fields - go directly under spec
+    # @spec
+    compositionSelector?: {str:str}
+    
+    # @spec
+    compositionRef?: str
+    
+    # @spec
+    # @immutable
+    compositionRevisionRef?: str
+```
+
+This generates an XRD with:
+```yaml
+spec:
+  properties:
+    parameters:
+      type: object
+      properties:
+        name:
+          type: string
+        replicas:
+          type: integer
+          default: 3
+      required:
+        - name
+    compositionSelector:
+      type: object
+      additionalProperties:
+        type: string
+    compositionRef:
+      type: string
+    compositionRevisionRef:
+      type: string
+      x-kubernetes-immutable: true
+  required:
+    - parameters
+```
+
+**Key points:**
+- Spec-level fields go directly under `spec`, not under `spec.parameters`
+- All validation annotations work with spec-level fields (`@immutable`, `@pattern`, etc.)
+- Required spec-level fields are added to `spec.required`
+- Useful for Crossplane composition-related fields
+
+**Common use cases:**
+- `compositionSelector` - Select composition based on labels
+- `compositionRef` - Reference a specific composition
+- `compositionRevisionRef` - Pin to a specific composition revision
+- Custom spec-level fields for advanced Crossplane features
+
+#### `@spec.path` (Schema-Level)
+Marks an entire schema to be placed at `spec.path` in the generated XRD. Similar to `@status` for schemas, but allows specifying a custom path under `spec`. This is particularly useful for Crossplane features like `writeConnectionSecretToRef` and `publishConnectionDetailsTo`.
+
+**Usage with separate schemas:**
+
+```kcl
+# @xrd
+schema Database:
+    # Regular fields go to spec.parameters
+    name: str
+    replicas?: int = 3
+
+# @spec.writeConnectionSecretToRef
+schema ConnectionSecretRef:
+    name: str
+    namespace?: str
+
+# @spec.publishConnectionDetailsTo
+schema PublishConnectionDetails:
+    name: str
+    # @additionalProperties
+    metadata?: {str:str}
+
+# @status
+schema DatabaseStatus:
+    ready: bool
+    endpoint?: str
+```
+
+This generates an XRD with:
+```yaml
+spec:
+  properties:
+    parameters:                          # Regular fields
+      type: object
+      properties:
+        name:
+          type: string
+        replicas:
+          type: integer
+      required:
+        - name
+    writeConnectionSecretToRef:          # From @spec.writeConnectionSecretToRef schema
+      type: object
+      properties:
+        name:
+          type: string
+        namespace:
+          type: string
+      required:
+        - name
+    publishConnectionDetailsTo:          # From @spec.publishConnectionDetailsTo schema
+      type: object
+      properties:
+        name:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+        - name
+  required:
+    - parameters
+status:                                  # From @status schema
+  properties:
+    ready:
+      type: boolean
+    endpoint:
+      type: string
+```
+
+**Key points:**
+- Schema-level annotation: applies to entire schema, not individual fields
+- Creates a nested object at the specified path under `spec`
+- All fields from the annotated schema become properties of that object
+- Works alongside `@status` schemas and regular fields
+- Validation annotations work on fields within the schema
+
+**Common Crossplane use cases:**
+- `@spec.writeConnectionSecretToRef` - Connection secret configuration
+- `@spec.publishConnectionDetailsTo` - Connection details publishing
+- `@spec.resourceRefs` - Cross-resource references
+- Custom spec-level objects for platform-specific configurations
 
 #### `@additionalProperties`
 Allows a field to accept additional properties beyond those defined in its schema. Sets `additionalProperties: true` on the field.

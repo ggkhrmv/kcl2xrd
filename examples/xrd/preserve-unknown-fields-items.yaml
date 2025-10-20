@@ -1,0 +1,62 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: myapps.example.org
+spec:
+  group: example.org
+  names:
+    kind: MyApp
+    plural: myapps
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    configs:
+                      type: array
+                      description: |-
+                        Using @itemsPreserveUnknownFields explicitly applies only to items
+                        This works with any array type
+                      items:
+                        type: object
+                        additionalProperties:
+                          type: string
+                        x-kubernetes-preserve-unknown-fields: true
+                    filter:
+                      type: array
+                      description: |-
+                        Using @preserveUnknownFields on [{any:any}] applies only to items
+                        This generates:
+                        filter:
+                        type: array
+                        items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                        (note: x-kubernetes-preserve-unknown-fields is NOT on the array itself)
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                    metadata:
+                      type: object
+                      description: You can also use @preserveUnknownFields on non-array fields normally
+                      additionalProperties: {}
+                      x-kubernetes-preserve-unknown-fields: true
+                    name:
+                      type: string
+                  required:
+                    - name
+                    - filter
+                    - configs
+              required:
+                - parameters
+          required:
+            - spec
