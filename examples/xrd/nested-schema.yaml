@@ -28,6 +28,8 @@ spec:
                       properties:
                         labels:
                           type: object
+                          additionalProperties:
+                            type: string
                         region:
                           type: string
                           description: 'S3 Bucket composite resource  Attributes ---------- parameters : MyBucketParams, required Configuration parameters for the bucket bucketName : str, required The name of the S3 bucket'
